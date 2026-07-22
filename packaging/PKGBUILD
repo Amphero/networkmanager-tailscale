@@ -1,0 +1,51 @@
+# Maintainer: Rafael <rafwi93@gmail.com>
+pkgbase=networkmanager-tailscale
+pkgname=(networkmanager-tailscale networkmanager-tailscale-plasma)
+pkgver=0.1.0
+pkgrel=1
+_plasmanm_ver=6.7.3
+pkgdesc="NetworkManager VPN plugin for Tailscale"
+arch=(x86_64)
+url="https://github.com/Amphero/networkmanager-tailscale"
+license=(GPL-2.0-or-later)
+options=(!debug)
+makedepends=(gcc make pkgconf glib2-devel libnm gtk4 json-glib curl qt6-base
+             plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt)
+source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+        "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz")
+sha256sums=('SKIP'
+            'SKIP')
+
+prepare() {
+	cd "$pkgbase-$pkgver"
+	mkdir -p reference
+	ln -sfn "$srcdir/plasma-nm-v$_plasmanm_ver" reference/plasma-nm
+}
+
+build() {
+	cd "$pkgbase-$pkgver"
+	make -f build.mk all
+}
+
+package_networkmanager-tailscale() {
+	pkgdesc+=" (service daemon and GTK4 editor)"
+	depends=(networkmanager libnm curl json-glib gtk4 tailscale)
+
+	cd "$pkgbase-$pkgver"
+	install -Dm755 dist/nm-tailscale-service "$pkgdir/usr/lib/NetworkManager/nm-tailscale-service"
+	install -Dm755 dist/libnm-vpn-plugin-tailscale.so "$pkgdir/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so"
+	install -Dm755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so"
+	install -Dm644 dist/nm-tailscale-service.name "$pkgdir/usr/lib/NetworkManager/VPN/nm-tailscale-service.name"
+	install -Dm644 dist/nm-tailscale-service.conf "$pkgdir/usr/share/dbus-1/system.d/nm-tailscale-service.conf"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_networkmanager-tailscale-plasma() {
+	pkgdesc+=" (plasma-nm integration; rebuild after plasma-nm updates)"
+	depends=(networkmanager-tailscale plasma-nm)
+
+	cd "$pkgbase-$pkgver"
+	install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so \
+		"$pkgdir/usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
