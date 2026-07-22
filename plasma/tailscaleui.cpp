@@ -275,7 +275,9 @@ private:
         const QString state = status.value(QLatin1String("BackendState")).toString();
         const QString authUrl = status.value(QLatin1String("AuthURL")).toString();
 
-        if (state == QLatin1String("Running") || state == QLatin1String("Stopped")) {
+        /* a pending AuthURL means the login is not done, no matter what
+         * BackendState claims from cached state */
+        if (authUrl.isEmpty() && (state == QLatin1String("Running") || state == QLatin1String("Stopped"))) {
             m_pollTimer->stop();
             finishLogin(QStringLiteral("Device is registered — you can connect now."));
             return;
