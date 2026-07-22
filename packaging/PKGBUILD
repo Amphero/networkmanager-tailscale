@@ -2,7 +2,7 @@
 pkgbase=networkmanager-tailscale
 pkgname=(networkmanager-tailscale networkmanager-tailscale-plasma)
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 _plasmanm_ver=6.7.3
 pkgdesc="NetworkManager VPN plugin for Tailscale"
 arch=(x86_64)
@@ -12,8 +12,10 @@ options=(!debug)
 makedepends=(gcc make pkgconf glib2-devel libnm gtk4 json-glib curl qt6-base
              plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt)
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
-        "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz")
+        "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz"
+        networkmanager-tailscale-plasma.hook)
 sha256sums=('SKIP'
+            'SKIP'
             'SKIP')
 
 prepare() {
@@ -47,5 +49,7 @@ package_networkmanager-tailscale-plasma() {
 	cd "$pkgbase-$pkgver"
 	install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so \
 		"$pkgdir/usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so"
+	install -Dm644 "$srcdir/networkmanager-tailscale-plasma.hook" \
+		"$pkgdir/usr/share/libalpm/hooks/networkmanager-tailscale-plasma.hook"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

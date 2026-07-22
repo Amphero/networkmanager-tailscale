@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = plasma-nm
+
+[Action]
+Description = networkmanager-tailscale-plasma: plasma-nm wurde aktualisiert
+When = PostTransaction
+Exec = /usr/bin/echo "==> networkmanager-tailscale-plasma wurde gegen die vorherige plasma-nm-Version gebaut. Neu bauen (make pkg) und mit pacman -U installieren, sonst kann der Plasma-Einstellungs-Dialog ausfallen (das Netzwerk-Applet funktioniert weiter)."
