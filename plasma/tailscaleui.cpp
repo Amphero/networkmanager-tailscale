@@ -70,6 +70,12 @@ class TailscaleWidget : public SettingWidget
 {
     Q_OBJECT
 public:
+    ~TailscaleWidget() override
+    {
+        if (m_pollTimer->isActive() && m_restoreDown)
+            setWantRunning(false);
+    }
+
     explicit TailscaleWidget(const NetworkManager::VpnSetting::Ptr &setting, QWidget *parent = nullptr)
         : SettingWidget(setting, parent)
         , m_setting(setting)
@@ -226,12 +232,27 @@ private:
 
     /* interactive browser login (device registration without an auth key) */
 
+    void setWantRunning(bool on)
+    {
+        localapiCall("PATCH", "/localapi/v0/prefs",
+                     on ? QByteArray("{\"WantRunning\":true,\"WantRunningSet\":true}")
+                        : QByteArray("{\"WantRunning\":false,\"WantRunningSet\":true}"));
+    }
+
     void doLogin()
     {
         long code = 0;
         bool transportOk = false;
 
         m_loginButton->setEnabled(false);
+
+        /* the login only completes while tailscaled talks to the control
+         * server, which it does not do while stopped — wake it up for the
+         * duration of the login */
+        m_restoreDown = !localapiGet("/localapi/v0/prefs").value(QLatin1String("WantRunning")).toBool(false);
+        if (m_restoreDown)
+            setWantRunning(true);
+
         localapiCall("POST", "/localapi/v0/login-interactive", QByteArray(""), &code, &transportOk);
         if (!transportOk) {
             finishLogin(QStringLiteral("tailscaled is not reachable — is tailscale installed and tailscaled.service running?"));
@@ -297,6 +318,10 @@ private:
     {
         m_loginStatus->setText(message);
         m_loginButton->setEnabled(true);
+        if (m_restoreDown) {
+            setWantRunning(false);
+            m_restoreDown = false;
+        }
     }
 
     NetworkManager::VpnSetting::Ptr m_setting;
@@ -311,6 +336,7 @@ private:
     int m_polls = 0;
     bool m_urlOpened = false;
     bool m_operatorTried = false;
+    bool m_restoreDown = false;
 };
 
 /*****************************************************************************/
