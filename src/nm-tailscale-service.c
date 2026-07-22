@@ -59,8 +59,12 @@ json_quote (const char *s)
 	return out;
 }
 
+/* @out_auth_url non-empty means tailscale demands (re-)authentication, and
+ * @out_online only turns TRUE once the control server accepted the node —
+ * BackendState alone can claim "Running" from cached state */
 static gboolean
-parse_status (const char *json, char **out_state, char **out_ip4, GError **error)
+parse_status (const char *json, char **out_state, char **out_ip4, char **out_auth_url,
+              gboolean *out_online, GError **error)
 {
 	g_autoptr(JsonParser) parser = json_parser_new ();
 	JsonObject *root;
@@ -68,6 +72,8 @@ parse_status (const char *json, char **out_state, char **out_ip4, GError **error
 
 	*out_state = NULL;
 	*out_ip4 = NULL;
+	*out_auth_url = NULL;
+	*out_online = FALSE;
 
 	if (!json_parser_load_from_data (parser, json, -1, error))
 		return FALSE;
@@ -79,10 +85,14 @@ parse_status (const char *json, char **out_state, char **out_ip4, GError **error
 	}
 	root = json_node_get_object (node);
 	*out_state = g_strdup (json_object_get_string_member_with_default (root, "BackendState", ""));
+	*out_auth_url = g_strdup (json_object_get_string_member_with_default (root, "AuthURL", ""));
 
 	node = json_object_get_member (root, "Self");
 	if (node && JSON_NODE_HOLDS_OBJECT (node)) {
 		JsonNode *ips = json_object_get_member (json_node_get_object (node), "TailscaleIPs");
+
+		*out_online = json_object_get_boolean_member_with_default (json_node_get_object (node),
+		                                                          "Online", FALSE);
 
 		if (ips && JSON_NODE_HOLDS_ARRAY (ips)) {
 			JsonArray *arr = json_node_get_array (ips);
@@ -160,12 +170,17 @@ monitor_cb (gpointer user_data)
 	g_autofree char *resp = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *auth_url = NULL;
+	gboolean online;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
-	if (resp && parse_status (resp, &state, &ip4, &error)) {
+	if (resp && parse_status (resp, &state, &ip4, &auth_url, &online, &error)) {
 		self->monitor_fails = 0;
-		if (g_strcmp0 (state, "Stopped") == 0 || g_strcmp0 (state, "NeedsLogin") == 0) {
-			g_message ("tailscale was stopped outside of NetworkManager (%s); disconnecting", state);
+		if (   g_strcmp0 (state, "Stopped") == 0
+		    || g_strcmp0 (state, "NeedsLogin") == 0
+		    || auth_url[0]) {
+			g_message ("tailscale was stopped or logged out outside of NetworkManager (%s%s); disconnecting",
+			           state, auth_url[0] ? ", re-authentication required" : "");
 			self->poll_id = 0;
 			nm_vpn_service_plugin_disconnect (NM_VPN_SERVICE_PLUGIN (self), NULL);
 			return G_SOURCE_REMOVE;
@@ -193,14 +208,16 @@ poll_status_cb (gpointer user_data)
 	g_autofree char *resp = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *auth_url = NULL;
+	gboolean online;
 
 	self->poll_count++;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
-	if (resp && parse_status (resp, &state, &ip4, &error)) {
+	if (resp && parse_status (resp, &state, &ip4, &auth_url, &online, &error)) {
 		if (nm_tailscale_debug)
-			g_message ("backend state: %s", state);
-		if (g_strcmp0 (state, "Running") == 0 && ip4) {
+			g_message ("backend state: %s online=%d%s", state, online, auth_url[0] ? " (auth pending)" : "");
+		if (g_strcmp0 (state, "Running") == 0 && ip4 && online && !auth_url[0]) {
 			if (send_config (self, ip4)) {
 				self->monitor_fails = 0;
 				self->poll_id = g_timeout_add (MONITOR_INTERVAL_MS, monitor_cb, self);
@@ -209,9 +226,9 @@ poll_status_cb (gpointer user_data)
 			}
 			return G_SOURCE_REMOVE;
 		}
-		if (g_strcmp0 (state, "NeedsLogin") == 0 && !self->sent_auth_key) {
-			g_warning ("tailscaled is logged out and no auth key is configured; "
-			           "run 'tailscale login' once or store an auth key in the connection");
+		if ((g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0]) && !self->sent_auth_key) {
+			g_warning ("tailscale requires (re-)authentication; use the browser login "
+			           "in the connection editor or store an auth key in the connection");
 			self->poll_id = 0;
 			nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
 			return G_SOURCE_REMOVE;
@@ -250,19 +267,20 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	g_autofree char *status = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *auth_url = NULL;
 	g_autofree char *prefs = NULL;
 	g_autoptr(GString) mask = NULL;
-	gboolean needs_login, on;
+	gboolean needs_login, on, online;
 
 	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, error);
-	if (!status || !parse_status (status, &state, &ip4, error))
+	if (!status || !parse_status (status, &state, &ip4, &auth_url, &online, error))
 		return FALSE;
 
-	needs_login = g_strcmp0 (state, "NeedsLogin") == 0;
+	needs_login = g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0];
 	if (needs_login && !(auth_key && auth_key[0])) {
 		g_set_error (error, NM_VPN_PLUGIN_ERROR, NM_VPN_PLUGIN_ERROR_FAILED,
-		             "tailscaled is logged out and no auth key is configured; "
-		             "run 'tailscale login' once or store an auth key in the connection");
+		             "tailscale requires (re-)authentication; use the browser login "
+		             "in the connection editor or store an auth key in the connection");
 		return FALSE;
 	}
 
