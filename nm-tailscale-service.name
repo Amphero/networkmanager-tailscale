@@ -1,0 +1,12 @@
+[VPN Connection]
+name=tailscale
+service=org.freedesktop.NetworkManager.tailscale
+program=/usr/lib/NetworkManager/nm-tailscale-service
+supports-multiple-connections=false
+
+[libnm]
+plugin=/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so
+
+[GNOME]
+supports-external-ui-mode=false
+supports-hints=false

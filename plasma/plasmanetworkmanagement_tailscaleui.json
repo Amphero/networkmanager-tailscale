@@ -1,0 +1,7 @@
+{
+    "KPlugin": {
+        "Name": "Tailscale",
+        "Description": "Connect this machine to your Tailscale network."
+    },
+    "X-NetworkManager-Services": "org.freedesktop.NetworkManager.tailscale"
+}

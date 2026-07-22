@@ -1,0 +1,5 @@
+# Build-Artefakte
+dist/
+
+# Fremd-Repositories (Referenz/Build-Abhängigkeit, siehe README)
+reference/
