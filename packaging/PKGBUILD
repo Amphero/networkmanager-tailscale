@@ -1,8 +1,8 @@
 # Maintainer: Rafael <rafwi93@gmail.com>
 pkgbase=networkmanager-tailscale
 pkgname=(networkmanager-tailscale networkmanager-tailscale-plasma)
-pkgver=0.1.0
-pkgrel=7
+pkgver=0.1.1
+pkgrel=1
 _plasmanm_ver=6.7.3
 pkgdesc="NetworkManager VPN plugin for Tailscale"
 arch=(x86_64)
