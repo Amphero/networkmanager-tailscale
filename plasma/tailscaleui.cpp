@@ -70,11 +70,9 @@ class TailscaleWidget : public SettingWidget
 {
     Q_OBJECT
 public:
-    ~TailscaleWidget() override
-    {
-        if (m_pollTimer->isActive() && m_restoreDown)
-            setWantRunning(false);
-    }
+    /* deliberately no cleanup of WantRunning in the destructor: if the
+     * dialog is closed mid-login, tailscaled must keep talking to the
+     * control server or the pending browser login can never complete */
 
     explicit TailscaleWidget(const NetworkManager::VpnSetting::Ptr &setting, QWidget *parent = nullptr)
         : SettingWidget(setting, parent)
@@ -306,7 +304,8 @@ private:
         if (!authUrl.isEmpty() && !m_urlOpened) {
             m_urlOpened = true;
             QDesktopServices::openUrl(QUrl(authUrl));
-            m_loginStatus->setText(QStringLiteral("Complete the login in your browser…"));
+            m_loginStatus->setText(QStringLiteral("Complete the login in your browser and keep this "
+                                                  "dialog open until it confirms the registration…"));
         }
         if (m_polls >= 180) {
             m_pollTimer->stop();

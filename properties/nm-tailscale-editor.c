@@ -289,7 +289,8 @@ login_poll_cb (gpointer user_data)
 		gtk_uri_launcher_launch (launcher, NULL, NULL, NULL, NULL);
 		g_object_unref (launcher);
 		gtk_label_set_text (GTK_LABEL (self->login_status),
-		                    "Complete the login in your browser…");
+		                    "Complete the login in your browser and keep this dialog "
+		                    "open until it confirms the registration…");
 	}
 	if (self->login_polls >= LOGIN_TIMEOUT_POLLS) {
 		login_finish (self, "Timed out waiting for the browser login.");
@@ -383,11 +384,12 @@ dispose (GObject *object)
 {
 	TailscaleEditor *self = TAILSCALE_EDITOR (object);
 
+	/* deliberately no set_want_running(FALSE) here: if the dialog is closed
+	 * mid-login, tailscaled must keep talking to the control server or the
+	 * pending browser login can never complete */
 	if (self->login_poll_id) {
 		g_source_remove (self->login_poll_id);
 		self->login_poll_id = 0;
-		if (self->restore_down)
-			set_want_running (FALSE);
 	}
 	g_clear_object (&self->widget);
 	g_clear_pointer (&self->exit_ips, g_ptr_array_unref);
