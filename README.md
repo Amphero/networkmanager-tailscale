@@ -40,7 +40,23 @@ git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f
     https://invent.kde.org/plasma/plasma-nm.git reference/plasma-nm
 ```
 
-## Installation
+## Arch packages
+
+`make pkg` builds two packages from the committed state (HEAD) into
+`./dist/` — pacman then handles installation, file tracking and removal:
+
+```sh
+make pkg
+sudo pacman -U dist/networkmanager-tailscale-*-x86_64.pkg.tar.zst          # daemon + GNOME
+sudo pacman -U dist/networkmanager-tailscale-plasma-*-x86_64.pkg.tar.zst   # KDE only
+sudo systemctl reload dbus && sudo systemctl restart NetworkManager
+```
+
+Remove with `sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale`.
+The PKGBUILD in `packaging/` also works standalone against a release
+tarball (tag `v<pkgver>`); fill in `sha256sums` for published releases.
+
+## Manual installation
 
 Prerequisite: `tailscale` is installed and `tailscaled` is running
 (`systemctl enable --now tailscaled`).
