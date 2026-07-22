@@ -3,3 +3,6 @@ dist/
 
 # Fremd-Repositories (Referenz/Build-Abhängigkeit, siehe README)
 reference/
+
+# Paketbau
+packaging/*.tar.gz

@@ -7,4 +7,6 @@ RUN pacman -Syu --noconfirm --needed \
         libnm gtk4 json-glib curl qt6-base \
         plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt \
         dbus python \
-    && pacman -Scc --noconfirm
+        base-devel networkmanager tailscale \
+    && pacman -Scc --noconfirm \
+    && useradd -m builder
