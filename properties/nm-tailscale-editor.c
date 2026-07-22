@@ -242,7 +242,10 @@ login_poll_cb (gpointer user_data)
 	self->login_polls++;
 	get_login_state (&state, &auth_url);
 
-	if (g_strcmp0 (state, "Running") == 0 || g_strcmp0 (state, "Stopped") == 0) {
+	/* a pending AuthURL means the login is not done, no matter what
+	 * BackendState claims from cached state */
+	if (   !(auth_url && auth_url[0])
+	    && (g_strcmp0 (state, "Running") == 0 || g_strcmp0 (state, "Stopped") == 0)) {
 		login_finish (self, "Device is registered — you can connect now.");
 		return G_SOURCE_REMOVE;
 	}
