@@ -1,38 +1,39 @@
 # NetworkManager-Tailscale
 
-NetworkManager-VPN-Plugin für [Tailscale](https://tailscale.com). Steuert
-tailscaled über dessen LocalAPI (`WantRunning` ≙ `tailscale up`/`down`);
-Interface, Routen und DNS verwaltet tailscaled selbst.
+NetworkManager VPN plugin for [Tailscale](https://tailscale.com). Drives
+tailscaled through its LocalAPI (`WantRunning` ≙ `tailscale up`/`down`);
+tailscaled itself manages the interface, routes and DNS.
 
-- Verbinden/Trennen über GNOME-Einstellungen, KDE Plasma (Systemeinstellungen
-  und Netzwerk-Applet) oder `nmcli`
-- Geräteregistrierung per Auth-Key (als NM-Secret gespeichert) oder
-  Browser-Login; fehlende Operator-Rechte werden per polkit eingerichtet
-- Exit-Node-Auswahl, Accept-DNS, Accept-Routes; neue Verbindungen übernehmen
-  die aktuellen tailscaled-Einstellungen als Vorbelegung
-- Externes `tailscale down`/Logout trennt die NM-Verbindung automatisch
+- Connect/disconnect from GNOME Settings, KDE Plasma (System Settings and
+  the network applet) or `nmcli`
+- Device registration via auth key (stored as an NM secret) or browser
+  login; missing operator rights are granted through polkit
+- Exit node selection, accept-DNS, accept-routes; new connections are
+  pre-filled with the current tailscaled preferences
+- An external `tailscale down`/logout disconnects the NM connection
+  automatically
 
-| Verzeichnis | Inhalt |
+| Directory | Contents |
 |---|---|
-| `src/` | VPN-Service-Daemon (C, libnm `NMVpnServicePlugin`) |
-| `properties/` | Editor-Plugin-Core (libnm) + GTK4-Editor für GNOME |
-| `plasma/` | plasma-nm-Plugin (Qt/C++) + Metadaten-Stub als Fallback |
-| `shared/` | Schlüssel-Definitionen, LocalAPI-HTTP-Client |
-| `tests/` | D-Bus-Smoke-Test mit gemocktem tailscaled |
+| `src/` | VPN service daemon (C, libnm `NMVpnServicePlugin`) |
+| `properties/` | Editor plugin core (libnm) + GTK4 editor for GNOME |
+| `plasma/` | plasma-nm plugin (Qt/C++) + metadata stub as fallback |
+| `shared/` | Key definitions, LocalAPI HTTP client |
+| `tests/` | D-Bus smoke test against a mocked tailscaled |
 
-## Bauen
+## Building
 
-Builds laufen in rootless Podman-Containern (Arch-Basis), Artefakte landen
-in `./dist/`:
+Builds run in rootless Podman containers (Arch based); artifacts end up in
+`./dist/`:
 
 ```sh
-make container   # Build-Image erstellen
+make container   # create the build image
 make build
-make check       # Smoke-Test: privater D-Bus + LocalAPI-Mock
+make check       # smoke test: private D-Bus + LocalAPI mock
 ```
 
-Das plasma-nm-Plugin baut gegen die privaten Header der installierten
-plasma-nm-Version und muss nach deren Updates neu gebaut werden:
+The plasma-nm plugin builds against the private headers of the installed
+plasma-nm version and must be rebuilt after its updates:
 
 ```sh
 git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f1) \
@@ -41,7 +42,7 @@ git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f
 
 ## Installation
 
-Voraussetzung: `tailscale` ist installiert und `tailscaled` läuft
+Prerequisite: `tailscale` is installed and `tailscaled` is running
 (`systemctl enable --now tailscaled`).
 
 ```sh
@@ -50,28 +51,28 @@ sudo install -m755 dist/libnm-vpn-plugin-tailscale.so              /usr/lib/Netw
 sudo install -m755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so  /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so
 sudo install -Dm644 dist/nm-tailscale-service.name                 /usr/lib/NetworkManager/VPN/nm-tailscale-service.name
 sudo install -m644 dist/nm-tailscale-service.conf                  /usr/share/dbus-1/system.d/nm-tailscale-service.conf
-# nur bei KDE Plasma:
+# KDE Plasma only:
 sudo install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so    /usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
 
 sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
 ```
 
-Lädt das plasma-nm-Plugin nach einem Plasma-Update nicht mehr, den Stub an
-denselben Pfad installieren — Verbinden über das Applet funktioniert damit
-weiter, nur der Einstellungs-Dialog entfällt:
+If the plasma-nm plugin no longer loads after a Plasma update, install the
+stub to the same path — connecting through the applet keeps working, only
+the settings dialog is unavailable:
 
 ```sh
 sudo install -m755 dist/plasmanetworkmanagement_tailscaleui-stub.so \
     /usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
 ```
 
-## Nutzung
+## Usage
 
-**GNOME:** Einstellungen → Netzwerk → VPN → „+“ → Tailscale.
+**GNOME:** Settings → Network → VPN → “+” → Tailscale.
 
-**KDE Plasma:** Systemeinstellungen → Netzwerk → Verbindungen → „+“ → VPN →
-Tailscale; schalten über das Netzwerk-Applet.
+**KDE Plasma:** System Settings → Network → Connections → “+” → VPN →
+Tailscale; toggle via the network applet.
 
 **nmcli:**
 
@@ -84,21 +85,21 @@ nmcli connection modify Tailscale +vpn.data "exit-node=100.x.y.z"       # option
 nmcli connection up Tailscale
 ```
 
-Der Auth-Key ist nur nötig, solange tailscaled ausgeloggt ist; alternativ
-einmalig `tailscale login` oder der Browser-Login-Button im Editor. Ohne die
-`vpn.data`-Einträge bleiben die entsprechenden tailscaled-Einstellungen
-unangetastet.
+The auth key is only needed while tailscaled is logged out; alternatively
+run `tailscale login` once or use the browser login button in the editor.
+Without the `vpn.data` entries the corresponding tailscaled preferences are
+left untouched.
 
-## Fehlersuche
+## Troubleshooting
 
 ```sh
-journalctl -u NetworkManager -f      # Meldungen erscheinen als nm-tailscale-service
+journalctl -u NetworkManager -f      # messages appear as nm-tailscale-service
 ```
 
-Bleibt die Exit-Node-Liste im Editor leer, fehlen Leserechte auf die
-LocalAPI: `sudo tailscale set --operator=$USER`.
+If the exit node list in the editor stays empty, the LocalAPI is not
+readable: `sudo tailscale set --operator=$USER`.
 
-## Deinstallation
+## Uninstall
 
 ```sh
 nmcli connection delete Tailscale
@@ -112,6 +113,6 @@ sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
 ```
 
-## Lizenz
+## License
 
 GPL-2.0-or-later
