@@ -42,8 +42,13 @@ git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f
 
 ## Arch packages
 
-`make pkg` builds two packages from the committed state (HEAD) into
-`./dist/` — pacman then handles installation, file tracking and removal:
+Prebuilt packages are attached to the
+[releases](https://github.com/Amphero/networkmanager-tailscale/releases) —
+download and install with `sudo pacman -U <package>` (dependencies are
+resolved from the official repos), then restart NetworkManager.
+
+To build them yourself, `make pkg` builds two packages from the committed
+state (HEAD) into `./dist/`:
 
 ```sh
 make pkg
@@ -55,8 +60,9 @@ sudo systemctl reload dbus && sudo systemctl restart NetworkManager
 Remove with `sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale`.
 The plasma package ships a pacman hook that prints a rebuild reminder
 whenever plasma-nm is updated.
-The PKGBUILD in `packaging/` also works standalone against a release
-tarball (tag `v<pkgver>`); fill in `sha256sums` for published releases.
+The PKGBUILD in `packaging/` also works standalone: it fetches the release
+tarball of tag `v<pkgver>` with pinned checksums (`make pkg` skips the
+checksum verification since it builds a local HEAD snapshot instead).
 
 ## Manual installation
 
@@ -118,6 +124,9 @@ If the exit node list in the editor stays empty, the LocalAPI is not
 readable: `sudo tailscale set --operator=$USER`.
 
 ## Uninstall
+
+Package installations: `sudo pacman -R networkmanager-tailscale-plasma
+networkmanager-tailscale`. For a manual installation:
 
 ```sh
 nmcli connection delete Tailscale
