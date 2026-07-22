@@ -53,6 +53,8 @@ sudo systemctl reload dbus && sudo systemctl restart NetworkManager
 ```
 
 Remove with `sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale`.
+The plasma package ships a pacman hook that prints a rebuild reminder
+whenever plasma-nm is updated.
 The PKGBUILD in `packaging/` also works standalone against a release
 tarball (tag `v<pkgver>`); fill in `sha256sums` for published releases.
 
