@@ -23,7 +23,7 @@ pkg:
 	    -o packaging/networkmanager-tailscale-$(PKGVER).tar.gz HEAD
 	$(PODMAN) run --rm -v "$(CURDIR)":/src $(IMAGE) sh -c '\
 	    cp -r /src/packaging /tmp/pkg && chown -R builder /tmp/pkg && \
-	    cd /tmp/pkg && runuser -u builder -- makepkg -f --noconfirm && \
+	    cd /tmp/pkg && runuser -u builder -- makepkg -f --noconfirm --skipinteg && \
 	    mkdir -p /src/dist && cp *.pkg.tar.zst /src/dist/'
 
 clean:
