@@ -40,7 +40,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply({"BackendState": "NeedsLogin"})
             elif state["want_running"]:
                 self._reply({"BackendState": "Running",
-                             "Self": {"TailscaleIPs": ["100.101.102.103", "fd7a:115c:a1e0::1"]}})
+                             "Self": {"Online": True,
+                                      "TailscaleIPs": ["100.101.102.103", "fd7a:115c:a1e0::1"]}})
             else:
                 self._reply({"BackendState": "Stopped"})
         else:
