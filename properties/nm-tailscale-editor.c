@@ -30,6 +30,7 @@ typedef struct {
 	guint login_polls;
 	gboolean url_opened;
 	gboolean operator_tried;
+	gboolean restore_down;
 } TailscaleEditor;
 
 typedef struct {
@@ -224,12 +225,44 @@ get_login_state (char **out_state, char **out_auth_url)
 	*out_auth_url = g_strdup (json_object_get_string_member_with_default (root, "AuthURL", ""));
 }
 
+static gboolean
+prefs_want_running (void)
+{
+	g_autofree char *resp = NULL;
+	g_autoptr(JsonParser) parser = json_parser_new ();
+	JsonNode *node;
+
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
+	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
+		return FALSE;
+	node = json_parser_get_root (parser);
+	if (!node || !JSON_NODE_HOLDS_OBJECT (node))
+		return FALSE;
+	return json_object_get_boolean_member_with_default (json_node_get_object (node),
+	                                                    "WantRunning", FALSE);
+}
+
+static void
+set_want_running (gboolean on)
+{
+	g_autofree char *resp = NULL;
+
+	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs",
+	                                   on ? "{\"WantRunning\":true,\"WantRunningSet\":true}"
+	                                      : "{\"WantRunning\":false,\"WantRunningSet\":true}",
+	                                   NULL, NULL);
+}
+
 static void
 login_finish (TailscaleEditor *self, const char *message)
 {
 	gtk_label_set_text (GTK_LABEL (self->login_status), message);
 	gtk_widget_set_sensitive (self->login_button, TRUE);
 	self->login_poll_id = 0;
+	if (self->restore_down) {
+		set_want_running (FALSE);
+		self->restore_down = FALSE;
+	}
 }
 
 static gboolean
@@ -309,6 +342,13 @@ login_start (TailscaleEditor *self)
 
 	gtk_widget_set_sensitive (self->login_button, FALSE);
 
+	/* the login only completes while tailscaled talks to the control
+	 * server, which it does not do while stopped — wake it up for the
+	 * duration of the login */
+	self->restore_down = !prefs_want_running ();
+	if (self->restore_down)
+		set_want_running (TRUE);
+
 	resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/login-interactive", "", &http_code, &error);
 	if (!resp) {
 		if (http_code == 403 && !self->operator_tried) {
@@ -346,6 +386,8 @@ dispose (GObject *object)
 	if (self->login_poll_id) {
 		g_source_remove (self->login_poll_id);
 		self->login_poll_id = 0;
+		if (self->restore_down)
+			set_want_running (FALSE);
 	}
 	g_clear_object (&self->widget);
 	g_clear_pointer (&self->exit_ips, g_ptr_array_unref);
