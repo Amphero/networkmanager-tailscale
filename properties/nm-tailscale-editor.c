@@ -227,21 +227,25 @@ get_login_state (char **out_state, char **out_auth_url)
 	*out_auth_url = g_strdup (json_object_get_string_member_with_default (root, "AuthURL", ""));
 }
 
+/* FALSE when the prefs could not be read — not the same as WantRunning
+ * being off, the caller must not act on the pref then */
 static gboolean
-prefs_want_running (void)
+prefs_get_want_running (gboolean *out_want)
 {
 	g_autofree char *resp = NULL;
 	g_autoptr(JsonParser) parser = json_parser_new ();
 	JsonNode *node;
 
+	*out_want = FALSE;
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
 		return FALSE;
 	node = json_parser_get_root (parser);
 	if (!node || !JSON_NODE_HOLDS_OBJECT (node))
 		return FALSE;
-	return json_object_get_boolean_member_with_default (json_node_get_object (node),
-	                                                    "WantRunning", FALSE);
+	*out_want = json_object_get_boolean_member_with_default (json_node_get_object (node),
+	                                                         "WantRunning", FALSE);
+	return TRUE;
 }
 
 static void
@@ -350,13 +354,14 @@ login_start (TailscaleEditor *self)
 	g_autoptr(GError) error = NULL;
 	g_autofree char *resp = NULL;
 	long http_code = 0;
+	gboolean want_running = FALSE;
 
 	gtk_widget_set_sensitive (self->login_button, FALSE);
 
 	/* the login only completes while tailscaled talks to the control
 	 * server, which it does not do while stopped — wake it up for the
 	 * duration of the login */
-	self->restore_down = !prefs_want_running ();
+	self->restore_down = prefs_get_want_running (&want_running) && !want_running;
 	if (self->restore_down)
 		set_want_running (TRUE);
 
