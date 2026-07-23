@@ -9,12 +9,15 @@
  * only reads the embedded metadata (see stub.cpp fallback).
  */
 
+#include <functional>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDBusConnection>
 #include <QDBusConnectionInterface>
 #include <QDesktopServices>
 #include <QFormLayout>
+#include <QFutureWatcher>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -22,8 +25,10 @@
 #include <QLineEdit>
 #include <QProcess>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
+#include <QtConcurrent>
 
 #include <KPluginFactory>
 #include <KUser>
@@ -37,25 +42,25 @@
 /*****************************************************************************/
 /* thin Qt wrapper around the shared C LocalAPI client */
 
-static QByteArray localapiCall(const char *method, const char *path, const QByteArray &body, long *httpCode = nullptr, bool *transportOk = nullptr)
+/* runs the blocking call in a worker thread; @done fires on the UI thread
+ * and is dropped when @ctx goes away first. An http code of 0 means
+ * tailscaled was not reachable; the body is null unless the reply was 2xx. */
+static void localapiCallAsync(QObject *ctx, const char *method, const char *path, const QByteArray &body,
+                              std::function<void(const QByteArray &, long)> done)
 {
-    long code = 0;
-    /* runs on the UI thread — keep the timeout well below anything a user
-     * would notice as a hang */
-    char *resp = nm_tailscale_localapi_call(method, path, body.isNull() ? nullptr : body.constData(), 2500, &code, nullptr);
-    const QByteArray result(resp ? resp : "");
-
-    g_free(resp);
-    if (httpCode)
-        *httpCode = code;
-    if (transportOk)
-        *transportOk = (code != 0); /* 0 = tailscaled not reachable */
-    return resp ? result : QByteArray();
-}
-
-static QJsonObject localapiGet(const char *path)
-{
-    return QJsonDocument::fromJson(localapiCall("GET", path, QByteArray())).object();
+    auto *watcher = new QFutureWatcher<QPair<QByteArray, long>>(ctx);
+    QObject::connect(watcher, &QFutureWatcherBase::finished, ctx, [watcher, done = std::move(done)] {
+        const auto reply = watcher->result();
+        watcher->deleteLater();
+        done(reply.first, reply.second);
+    });
+    watcher->setFuture(QtConcurrent::run([method, path, body] {
+        long code = 0;
+        char *resp = nm_tailscale_localapi_call(method, path, body.isNull() ? nullptr : body.constData(), 2500, &code, nullptr);
+        const QPair<QByteArray, long> reply(resp ? QByteArray(resp) : QByteArray(), code);
+        g_free(resp);
+        return reply;
+    }));
 }
 
 static QString firstV4(const QJsonObject &obj, const char *member)
@@ -185,17 +190,24 @@ public:
 private:
     void populateExitNodes()
     {
-        const QJsonObject peers = localapiGet("/localapi/v0/status").value(QLatin1String("Peer")).toObject();
-        for (auto it = peers.begin(); it != peers.end(); ++it) {
-            const QJsonObject peer = it.value().toObject();
-            if (!peer.value(QLatin1String("ExitNodeOption")).toBool())
-                continue;
-            const QString ip = firstV4(peer, "TailscaleIPs");
-            if (ip.isEmpty())
-                continue;
-            m_exitNode->addItem(QStringLiteral("%1 (%2)").arg(peer.value(QLatin1String("HostName")).toString(), ip), ip);
-            m_exitIds << peer.value(QLatin1String("ID")).toString();
-        }
+        localapiCallAsync(this, "GET", "/localapi/v0/status", QByteArray(), [this](const QByteArray &resp, long) {
+            const QJsonObject peers = QJsonDocument::fromJson(resp).object().value(QLatin1String("Peer")).toObject();
+            const QSignalBlocker blockCombo(m_exitNode);
+            for (auto it = peers.begin(); it != peers.end(); ++it) {
+                const QJsonObject peer = it.value().toObject();
+                if (!peer.value(QLatin1String("ExitNodeOption")).toBool())
+                    continue;
+                const QString ip = firstV4(peer, "TailscaleIPs");
+                /* the stored exit node may already sit in the list */
+                if (ip.isEmpty() || m_exitNode->findData(ip) >= 0)
+                    continue;
+                m_exitNode->addItem(QStringLiteral("%1 (%2)").arg(peer.value(QLatin1String("HostName")).toString(), ip), ip);
+                m_exitIds << peer.value(QLatin1String("ID")).toString();
+            }
+            m_peersLoaded = true;
+            if (m_pendingPrefill)
+                startPrefill();
+        });
     }
 
     void selectExitNodeByIp(const QString &ip, bool addIfMissing)
@@ -212,72 +224,94 @@ private:
     }
 
     /* initial values for a freshly created connection: mirror the current
-     * tailscaled prefs so the first connect is behavior-neutral */
+     * tailscaled prefs so the first connect is behavior-neutral. Applied
+     * only after the peer list arrived so the ID lookup has data. */
     void prefillFromPrefs()
     {
-        const QJsonObject prefs = localapiGet("/localapi/v0/prefs");
-        if (prefs.isEmpty())
-            return;
-        m_dns->setChecked(prefs.value(QLatin1String("CorpDNS")).toBool(true));
-        m_routes->setChecked(prefs.value(QLatin1String("RouteAll")).toBool(false));
+        m_pendingPrefill = true;
+        if (m_peersLoaded)
+            startPrefill();
+    }
 
-        const QString exitIp = prefs.value(QLatin1String("ExitNodeIP")).toString();
-        const QString exitId = prefs.value(QLatin1String("ExitNodeID")).toString();
-        if (!exitIp.isEmpty()) {
-            selectExitNodeByIp(exitIp, true);
-        } else if (!exitId.isEmpty()) {
-            /* `tailscale set --exit-node` stores the stable ID, not the IP */
-            const int idx = int(m_exitIds.indexOf(exitId));
-            if (idx > 0)
-                m_exitNode->setCurrentIndex(idx);
-        }
+    void startPrefill()
+    {
+        m_pendingPrefill = false;
+        localapiCallAsync(this, "GET", "/localapi/v0/prefs", QByteArray(), [this](const QByteArray &resp, long) {
+            const QJsonObject prefs = QJsonDocument::fromJson(resp).object();
+            if (prefs.isEmpty())
+                return;
+            const QSignalBlocker blockCombo(m_exitNode);
+            const QSignalBlocker blockDns(m_dns);
+            const QSignalBlocker blockRoutes(m_routes);
+            m_dns->setChecked(prefs.value(QLatin1String("CorpDNS")).toBool(true));
+            m_routes->setChecked(prefs.value(QLatin1String("RouteAll")).toBool(false));
+
+            const QString exitIp = prefs.value(QLatin1String("ExitNodeIP")).toString();
+            const QString exitId = prefs.value(QLatin1String("ExitNodeID")).toString();
+            if (!exitIp.isEmpty()) {
+                selectExitNodeByIp(exitIp, true);
+            } else if (!exitId.isEmpty()) {
+                /* `tailscale set --exit-node` stores the stable ID, not the IP */
+                const int idx = int(m_exitIds.indexOf(exitId));
+                if (idx > 0)
+                    m_exitNode->setCurrentIndex(idx);
+            }
+        });
     }
 
     /* interactive browser login (device registration without an auth key) */
 
     void setWantRunning(bool on)
     {
-        localapiCall("PATCH", "/localapi/v0/prefs",
-                     on ? QByteArray("{\"WantRunning\":true,\"WantRunningSet\":true}")
-                        : QByteArray("{\"WantRunning\":false,\"WantRunningSet\":true}"));
+        localapiCallAsync(this, "PATCH", "/localapi/v0/prefs",
+                          on ? QByteArray("{\"WantRunning\":true,\"WantRunningSet\":true}")
+                             : QByteArray("{\"WantRunning\":false,\"WantRunningSet\":true}"),
+                          [](const QByteArray &, long) {});
     }
 
     void doLogin()
     {
-        long code = 0;
-        bool transportOk = false;
-
         m_loginButton->setEnabled(false);
 
         /* the login only completes while tailscaled talks to the control
          * server, which it does not do while stopped — wake it up for the
          * duration of the login. A failed prefs read must not count as
          * "was down", so only restore what was actually read. */
-        long prefsCode = 0;
-        const QByteArray prefsRaw = localapiCall("GET", "/localapi/v0/prefs", QByteArray(), &prefsCode);
-        m_restoreDown = prefsCode >= 200 && prefsCode <= 299
-            && !QJsonDocument::fromJson(prefsRaw).object().value(QLatin1String("WantRunning")).toBool(false);
-        if (m_restoreDown)
-            setWantRunning(true);
+        localapiCallAsync(this, "GET", "/localapi/v0/prefs", QByteArray(), [this](const QByteArray &resp, long code) {
+            m_restoreDown = code >= 200 && code <= 299
+                && !QJsonDocument::fromJson(resp).object().value(QLatin1String("WantRunning")).toBool(false);
+            if (m_restoreDown)
+                localapiCallAsync(this, "PATCH", "/localapi/v0/prefs",
+                                  QByteArray("{\"WantRunning\":true,\"WantRunningSet\":true}"),
+                                  [this](const QByteArray &, long) {
+                    requestLogin();
+                });
+            else
+                requestLogin();
+        });
+    }
 
-        localapiCall("POST", "/localapi/v0/login-interactive", QByteArray(""), &code, &transportOk);
-        if (!transportOk) {
-            finishLogin(QStringLiteral("tailscaled is not reachable — is tailscale installed and tailscaled.service running?"));
-            return;
-        }
-        if (code == 403 && !m_operatorTried) {
-            m_operatorTried = true;
-            grantOperator();
-            return;
-        }
-        if (code < 200 || code > 299) {
-            finishLogin(QStringLiteral("LocalAPI error (HTTP %1)").arg(code));
-            return;
-        }
-        m_loginStatus->setText(QStringLiteral("Requesting login link…"));
-        m_urlOpened = false;
-        m_polls = 0;
-        m_pollTimer->start();
+    void requestLogin()
+    {
+        localapiCallAsync(this, "POST", "/localapi/v0/login-interactive", QByteArray(""), [this](const QByteArray &, long code) {
+            if (code == 0) {
+                finishLogin(QStringLiteral("tailscaled is not reachable — is tailscale installed and tailscaled.service running?"));
+                return;
+            }
+            if (code == 403 && !m_operatorTried) {
+                m_operatorTried = true;
+                grantOperator();
+                return;
+            }
+            if (code < 200 || code > 299) {
+                finishLogin(QStringLiteral("LocalAPI error (HTTP %1)").arg(code));
+                return;
+            }
+            m_loginStatus->setText(QStringLiteral("Requesting login link…"));
+            m_urlOpened = false;
+            m_polls = 0;
+            m_pollTimer->start();
+        });
     }
 
     /* one-time: make the desktop user the tailscaled operator, authenticated
@@ -299,32 +333,41 @@ private:
     void pollLogin()
     {
         m_polls++;
-        const QJsonObject status = localapiGet("/localapi/v0/status");
-        const QString state = status.value(QLatin1String("BackendState")).toString();
-        const QString authUrl = status.value(QLatin1String("AuthURL")).toString();
-        const bool online = status.value(QLatin1String("Self")).toObject().value(QLatin1String("Online")).toBool(false);
-
-        /* a pending AuthURL means the login is not done, no matter what
-         * BackendState claims from cached state — and right after the login
-         * request the AuthURL may not be filled in yet, so "Running" only
-         * counts once the control server accepted the node (Online) */
-        if (authUrl.isEmpty()
-            && ((state == QLatin1String("Running") && online)
-                || (state == QLatin1String("Stopped") && m_polls >= 3))) {
-            m_pollTimer->stop();
-            finishLogin(QStringLiteral("Device is registered — you can connect now."));
-            return;
-        }
-        if (!authUrl.isEmpty() && !m_urlOpened) {
-            m_urlOpened = true;
-            QDesktopServices::openUrl(QUrl(authUrl));
-            m_loginStatus->setText(QStringLiteral("Complete the login in your browser and keep this "
-                                                  "dialog open until it confirms the registration…"));
-        }
         if (m_polls >= 180) {
             m_pollTimer->stop();
             finishLogin(QStringLiteral("Timed out waiting for the browser login."));
+            return;
         }
+        if (m_pollBusy)
+            return;
+        m_pollBusy = true;
+        localapiCallAsync(this, "GET", "/localapi/v0/status", QByteArray(), [this](const QByteArray &resp, long) {
+            m_pollBusy = false;
+            if (!m_pollTimer->isActive())
+                return; /* the login already finished */
+            const QJsonObject status = QJsonDocument::fromJson(resp).object();
+            const QString state = status.value(QLatin1String("BackendState")).toString();
+            const QString authUrl = status.value(QLatin1String("AuthURL")).toString();
+            const bool online = status.value(QLatin1String("Self")).toObject().value(QLatin1String("Online")).toBool(false);
+
+            /* a pending AuthURL means the login is not done, no matter what
+             * BackendState claims from cached state — and right after the login
+             * request the AuthURL may not be filled in yet, so "Running" only
+             * counts once the control server accepted the node (Online) */
+            if (authUrl.isEmpty()
+                && ((state == QLatin1String("Running") && online)
+                    || (state == QLatin1String("Stopped") && m_polls >= 3))) {
+                m_pollTimer->stop();
+                finishLogin(QStringLiteral("Device is registered — you can connect now."));
+                return;
+            }
+            if (!authUrl.isEmpty() && !m_urlOpened) {
+                m_urlOpened = true;
+                QDesktopServices::openUrl(QUrl(authUrl));
+                m_loginStatus->setText(QStringLiteral("Complete the login in your browser and keep this "
+                                                      "dialog open until it confirms the registration…"));
+            }
+        });
     }
 
     /* true while NM runs our VPN service daemon, i.e. a tailscale NM
@@ -358,6 +401,9 @@ private:
     QCheckBox *m_routes;
     QTimer *m_pollTimer;
     int m_polls = 0;
+    bool m_pollBusy = false;
+    bool m_peersLoaded = false;
+    bool m_pendingPrefill = false;
     bool m_urlOpened = false;
     bool m_operatorTried = false;
     bool m_restoreDown = false;

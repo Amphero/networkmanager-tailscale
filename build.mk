@@ -39,7 +39,7 @@ $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-edito
 # Host-Version passen) und linkt gegen das installierte libplasmanm_editor.so.
 PLASMA_INC  = -Ireference/plasma-nm/libs/editor -Ireference/plasma-nm/libs/editor/widgets -Iplasma \
               -I/usr/include/KF6/KCoreAddons -I/usr/include/KF6/KWidgetsAddons -I/usr/include/KF6/NetworkManagerQt
-PLASMA_PKGS = Qt6Widgets Qt6DBus libnm libcurl
+PLASMA_PKGS = Qt6Widgets Qt6DBus Qt6Concurrent libnm libcurl
 
 $(DIST)/plasmanetworkmanagement_tailscaleui.so: plasma/tailscaleui.cpp $(LOCALAPI) plasma/plasmanetworkmanagement_tailscaleui.json plasma/plasmanm_editor_export.h shared/nm-tailscale.h shared/nm-tailscale-localapi.h | $(DIST)
 	/usr/lib/qt6/moc $$(pkg-config --cflags-only-I $(PLASMA_PKGS)) $(PLASMA_INC) -Ishared \
