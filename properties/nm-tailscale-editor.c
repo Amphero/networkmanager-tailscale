@@ -259,6 +259,27 @@ set_want_running (gboolean on)
 	                                   NULL, NULL);
 }
 
+/* TRUE while NM runs our VPN service daemon, i.e. a tailscale NM
+ * connection is active or being activated right now */
+static gboolean
+vpn_service_active (void)
+{
+	g_autoptr(GDBusConnection) bus = g_bus_get_sync (G_BUS_TYPE_SYSTEM, NULL, NULL);
+	g_autoptr(GVariant) ret = NULL;
+	gboolean owned = FALSE;
+
+	if (!bus)
+		return FALSE;
+	ret = g_dbus_connection_call_sync (bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
+	                                   "org.freedesktop.DBus", "NameHasOwner",
+	                                   g_variant_new ("(s)", NM_DBUS_SERVICE_TAILSCALE),
+	                                   G_VARIANT_TYPE ("(b)"), G_DBUS_CALL_FLAGS_NONE,
+	                                   1000, NULL, NULL);
+	if (ret)
+		g_variant_get (ret, "(b)", &owned);
+	return owned;
+}
+
 static void
 login_finish (TailscaleEditor *self, const char *message)
 {
@@ -266,8 +287,11 @@ login_finish (TailscaleEditor *self, const char *message)
 	gtk_widget_set_sensitive (self->login_button, TRUE);
 	self->login_poll_id = 0;
 	if (self->restore_down) {
-		set_want_running (FALSE);
 		self->restore_down = FALSE;
+		/* NM may have activated the connection while the login ran;
+		 * WantRunning belongs to the service daemon then */
+		if (!vpn_service_active ())
+			set_want_running (FALSE);
 	}
 }
 
