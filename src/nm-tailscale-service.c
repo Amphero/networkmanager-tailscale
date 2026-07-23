@@ -40,7 +40,16 @@ typedef struct {
 	gint64 connect_start;
 	guint monitor_fails;
 	gboolean sent_auth_key;
+	gboolean call_busy; /* a poll/monitor status GET is in flight */
+	GCancellable *cancellable;
 	char *rollback; /* prefs PATCH undoing real_connect, for failed connects */
+	/* context of the running connect chain */
+	char *pending_auth_key;
+	char *pending_mask;
+	gboolean pending_needs_login;
+	gboolean pending_set_dns;
+	gboolean pending_set_routes;
+	gboolean pending_set_exit;
 } NMTailscalePlugin;
 
 typedef struct {
@@ -131,6 +140,18 @@ stop_poll (NMTailscalePlugin *self)
 	}
 }
 
+/* invalidates every in-flight LocalAPI call; their callbacks see a
+ * cancelled error and bail without touching the plugin state */
+static void
+cancel_calls (NMTailscalePlugin *self)
+{
+	if (self->cancellable)
+		g_cancellable_cancel (self->cancellable);
+	g_clear_object (&self->cancellable);
+	self->cancellable = g_cancellable_new ();
+	self->call_busy = FALSE;
+}
+
 /* captures the prefs real_connect is about to overwrite, so a failed
  * connect does not leave the connection's settings behind in tailscaled */
 static char *
@@ -169,15 +190,24 @@ build_rollback (const char *prefs_json, gboolean set_dns, gboolean set_routes, g
 }
 
 static void
+rollback_done_cb (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	g_autoptr(GError) error = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
+
+	if (!resp)
+		g_warning ("could not restore the previous tailscaled prefs: %s", error->message);
+}
+
+static void
 apply_rollback (NMTailscalePlugin *self)
 {
-	g_autofree char *resp = NULL;
-
 	if (!self->rollback)
 		return;
-	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", self->rollback, 0, NULL, NULL);
-	if (!resp)
-		g_warning ("could not restore the previous tailscaled prefs");
+	/* fire and forget, deliberately without the cancellable: the prefs
+	 * should go back even when the connect attempt is already history */
+	nm_tailscale_localapi_call_async ("PATCH", "/localapi/v0/prefs", self->rollback, 0,
+	                                  NULL, rollback_done_cb, NULL);
 	g_clear_pointer (&self->rollback, g_free);
 }
 
@@ -234,21 +264,30 @@ send_config (NMTailscalePlugin *self, const char *ip4, const char *ip6)
 	return TRUE;
 }
 
-/* watches the backend while connected: an external `tailscale down` or an
- * expired login tears the NM connection down as well */
-static gboolean
-monitor_cb (gpointer user_data)
+/* the poll and monitor timers only kick off worker-thread requests; all
+ * handling happens in the done-callbacks on the main context. A callback
+ * arriving after cancel_calls() or stop_poll() drops out immediately. */
+
+static gboolean monitor_tick_cb (gpointer user_data);
+
+static void
+monitor_done_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 {
 	NMTailscalePlugin *self = user_data;
 	g_autoptr(GError) error = NULL;
-	g_autofree char *resp = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
 	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	gboolean online;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, &error);
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	self->call_busy = FALSE;
+	if (!self->poll_id)
+		goto out; /* stopped while the request ran */
+
 	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		self->monitor_fails = 0;
 		if (   g_strcmp0 (state, "Stopped") == 0
@@ -256,11 +295,10 @@ monitor_cb (gpointer user_data)
 		    || auth_url[0]) {
 			g_message ("tailscale was stopped or logged out outside of NetworkManager (%s%s); disconnecting",
 			           state, auth_url[0] ? ", re-authentication required" : "");
-			self->poll_id = 0;
+			stop_poll (self);
 			nm_vpn_service_plugin_disconnect (NM_VPN_SERVICE_PLUGIN (self), NULL);
-			return G_SOURCE_REMOVE;
 		}
-		return G_SOURCE_CONTINUE;
+		goto out;
 	}
 
 	self->monitor_fails++;
@@ -268,19 +306,34 @@ monitor_cb (gpointer user_data)
 	           self->monitor_fails, MONITOR_MAX_FAILURES,
 	           error ? error->message : "unknown error");
 	if (self->monitor_fails >= MONITOR_MAX_FAILURES) {
-		self->poll_id = 0;
+		stop_poll (self);
 		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
-		return G_SOURCE_REMOVE;
+	}
+out:
+	g_object_unref (self);
+}
+
+/* watches the backend while connected: an external `tailscale down` or an
+ * expired login tears the NM connection down as well */
+static gboolean
+monitor_tick_cb (gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+
+	if (!self->call_busy) {
+		self->call_busy = TRUE;
+		nm_tailscale_localapi_call_async ("GET", "/localapi/v0/status", NULL, 2000,
+		                                  self->cancellable, monitor_done_cb, g_object_ref (self));
 	}
 	return G_SOURCE_CONTINUE;
 }
 
-static gboolean
-poll_status_cb (gpointer user_data)
+static void
+poll_done_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 {
 	NMTailscalePlugin *self = user_data;
 	g_autoptr(GError) error = NULL;
-	g_autofree char *resp = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
 	g_autofree char *ip6 = NULL;
@@ -288,43 +341,58 @@ poll_status_cb (gpointer user_data)
 	gboolean online;
 	gint64 elapsed_ms = (g_get_monotonic_time () - self->connect_start) / 1000;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, &error);
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	self->call_busy = FALSE;
+	if (!self->poll_id)
+		goto out; /* stopped while the request ran */
+
 	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		if (nm_tailscale_debug)
 			g_message ("backend state: %s online=%d%s", state, online, auth_url[0] ? " (auth pending)" : "");
 		if (g_strcmp0 (state, "Running") == 0 && (ip4 || ip6) && online && !auth_url[0]) {
+			stop_poll (self);
 			if (send_config (self, ip4, ip6)) {
 				g_clear_pointer (&self->rollback, g_free);
 				self->monitor_fails = 0;
-				self->poll_id = g_timeout_add (MONITOR_INTERVAL_MS, monitor_cb, self);
+				self->poll_id = g_timeout_add (MONITOR_INTERVAL_MS, monitor_tick_cb, self);
 			} else {
-				self->poll_id = 0;
 				apply_rollback (self);
 			}
-			return G_SOURCE_REMOVE;
+			goto out;
 		}
 		if (g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0]) {
 			if (!self->sent_auth_key) {
 				g_warning ("tailscale requires (re-)authentication; use the browser login "
 				           "in the connection editor or store an auth key in the connection");
-				self->poll_id = 0;
+				stop_poll (self);
 				apply_rollback (self);
 				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
-				return G_SOURCE_REMOVE;
+				goto out;
 			}
 			/* the key already went to /start: an AuthURL or a lingering
 			 * NeedsLogin means the control server did not accept it */
 			if (auth_url[0] || elapsed_ms >= AUTH_KEY_GRACE_MS) {
 				g_warning ("tailscale did not accept the stored auth key (expired or revoked?)");
-				self->poll_id = 0;
+				stop_poll (self);
 				apply_rollback (self);
 				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
-				return G_SOURCE_REMOVE;
+				goto out;
 			}
 		}
 	} else {
 		g_warning ("polling tailscaled status failed: %s", error ? error->message : "unknown error");
 	}
+	/* the connect timeout lives in poll_tick_cb */
+out:
+	g_object_unref (self);
+}
+
+static gboolean
+poll_tick_cb (gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+	gint64 elapsed_ms = (g_get_monotonic_time () - self->connect_start) / 1000;
 
 	if (elapsed_ms >= CONNECT_TIMEOUT_MS) {
 		g_warning ("timeout waiting for tailscale to reach the Running state");
@@ -333,7 +401,19 @@ poll_status_cb (gpointer user_data)
 		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
 		return G_SOURCE_REMOVE;
 	}
+	if (!self->call_busy) {
+		self->call_busy = TRUE;
+		nm_tailscale_localapi_call_async ("GET", "/localapi/v0/status", NULL, 2000,
+		                                  self->cancellable, poll_done_cb, g_object_ref (self));
+	}
 	return G_SOURCE_CONTINUE;
+}
+
+static void
+begin_poll (NMTailscalePlugin *self)
+{
+	stop_poll (self);
+	self->poll_id = g_timeout_add (POLL_INTERVAL_MS, poll_tick_cb, self);
 }
 
 static gboolean
@@ -347,6 +427,113 @@ data_item_bool (NMSettingVpn *s_vpn, const char *key, gboolean *out)
 	return TRUE;
 }
 
+/* connect chain: status -> prefs snapshot -> prefs PATCH -> optional auth
+ * key login -> poll. real_connect only kicks it off; errors surface via
+ * nm_vpn_service_plugin_failure once the responses come in. */
+
+static void
+connect_start_cb (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+	g_autoptr(GError) error = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
+
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	if (!resp) {
+		g_warning ("starting the auth key login failed: %s", error->message);
+		apply_rollback (self);
+		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
+		goto out;
+	}
+	begin_poll (self);
+out:
+	g_object_unref (self);
+}
+
+static void
+connect_patch_cb (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+	g_autoptr(GError) error = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
+
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	if (!resp) {
+		g_warning ("applying the connection prefs failed: %s", error->message);
+		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+		goto out;
+	}
+
+	self->sent_auth_key = self->pending_needs_login;
+	if (self->pending_needs_login) {
+		g_autofree char *quoted = json_quote (self->pending_auth_key);
+		g_autofree char *body = g_strdup_printf ("{\"AuthKey\":%s}", quoted);
+
+		nm_tailscale_localapi_call_async ("POST", "/localapi/v0/start", body, 0,
+		                                  self->cancellable, connect_start_cb, g_object_ref (self));
+	} else {
+		begin_poll (self);
+	}
+out:
+	g_object_unref (self);
+}
+
+static void
+connect_prefs_cb (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+	g_autoptr(GError) error = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
+
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	/* the snapshot is best effort: without it there is just no rollback */
+	g_clear_pointer (&self->rollback, g_free);
+	self->rollback = build_rollback (resp, self->pending_set_dns, self->pending_set_routes,
+	                                 self->pending_set_exit);
+
+	nm_tailscale_localapi_call_async ("PATCH", "/localapi/v0/prefs", self->pending_mask, 0,
+	                                  self->cancellable, connect_patch_cb, g_object_ref (self));
+out:
+	g_object_unref (self);
+}
+
+static void
+connect_status_cb (GObject *source, GAsyncResult *result, gpointer user_data)
+{
+	NMTailscalePlugin *self = user_data;
+	g_autoptr(GError) error = NULL;
+	g_autofree char *resp = nm_tailscale_localapi_call_finish (result, NULL, &error);
+	g_autofree char *state = NULL;
+	g_autofree char *ip4 = NULL;
+	g_autofree char *ip6 = NULL;
+	g_autofree char *auth_url = NULL;
+	gboolean online;
+
+	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+		goto out;
+	if (!resp || !parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
+		g_warning ("cannot connect: %s", error ? error->message : "unexpected LocalAPI status reply");
+		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
+		goto out;
+	}
+
+	self->pending_needs_login = g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0];
+	if (self->pending_needs_login && !self->pending_auth_key) {
+		g_warning ("tailscale requires (re-)authentication; use the browser login "
+		           "in the connection editor or store an auth key in the connection");
+		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
+		goto out;
+	}
+
+	nm_tailscale_localapi_call_async ("GET", "/localapi/v0/prefs", NULL, 2000,
+	                                  self->cancellable, connect_prefs_cb, g_object_ref (self));
+out:
+	g_object_unref (self);
+}
+
 static gboolean
 real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **error)
 {
@@ -354,28 +541,8 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	NMSettingVpn *s_vpn = nm_connection_get_setting_vpn (connection);
 	const char *auth_key = s_vpn ? nm_setting_vpn_get_secret (s_vpn, NM_TAILSCALE_KEY_AUTH_KEY) : NULL;
 	const char *exit_node = s_vpn ? nm_setting_vpn_get_data_item (s_vpn, NM_TAILSCALE_KEY_EXIT_NODE) : NULL;
-	g_autofree char *status = NULL;
-	g_autofree char *state = NULL;
-	g_autofree char *ip4 = NULL;
-	g_autofree char *ip6 = NULL;
-	g_autofree char *auth_url = NULL;
-	g_autofree char *prefs = NULL;
-	g_autofree char *old_prefs = NULL;
 	g_autoptr(GString) mask = NULL;
-	gboolean needs_login, online;
 	gboolean set_dns, set_routes, dns_on = FALSE, routes_on = FALSE;
-
-	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, error);
-	if (!status || !parse_status (status, &state, &ip4, &ip6, &auth_url, &online, error))
-		return FALSE;
-
-	needs_login = g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0];
-	if (needs_login && !(auth_key && auth_key[0])) {
-		g_set_error (error, NM_VPN_PLUGIN_ERROR, NM_VPN_PLUGIN_ERROR_FAILED,
-		             "tailscale requires (re-)authentication; use the browser login "
-		             "in the connection editor or store an auth key in the connection");
-		return FALSE;
-	}
 
 	/* the equivalent of `tailscale up`; the optional settings are only
 	 * touched when the connection carries the corresponding data item */
@@ -396,30 +563,20 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	}
 	g_string_append_c (mask, '}');
 
-	old_prefs = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, 2000, NULL, NULL);
-	g_clear_pointer (&self->rollback, g_free);
-	self->rollback = build_rollback (old_prefs, set_dns, set_routes, exit_node != NULL);
-
-	prefs = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", mask->str, 0, NULL, error);
-	if (!prefs)
-		return FALSE;
-
-	self->sent_auth_key = needs_login;
-	if (needs_login) {
-		g_autofree char *quoted = json_quote (auth_key);
-		g_autofree char *body = g_strdup_printf ("{\"AuthKey\":%s}", quoted);
-		g_autofree char *resp = NULL;
-
-		resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/start", body, 0, NULL, error);
-		if (!resp) {
-			apply_rollback (self);
-			return FALSE;
-		}
-	}
-
 	stop_poll (self);
+	cancel_calls (self);
+	g_clear_pointer (&self->pending_auth_key, g_free);
+	g_clear_pointer (&self->pending_mask, g_free);
+	self->pending_auth_key = auth_key && auth_key[0] ? g_strdup (auth_key) : NULL;
+	self->pending_mask = g_strdup (mask->str);
+	self->pending_set_dns = set_dns;
+	self->pending_set_routes = set_routes;
+	self->pending_set_exit = exit_node != NULL;
+	self->sent_auth_key = FALSE;
 	self->connect_start = g_get_monotonic_time ();
-	self->poll_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
+
+	nm_tailscale_localapi_call_async ("GET", "/localapi/v0/status", NULL, 2000,
+	                                  self->cancellable, connect_status_cb, g_object_ref (self));
 	return TRUE;
 }
 
@@ -457,6 +614,7 @@ state_changed_cb (NMTailscalePlugin *self, NMVpnServiceState state, gpointer use
 	case NM_VPN_SERVICE_STATE_STOPPING:
 	case NM_VPN_SERVICE_STATE_STOPPED:
 		stop_poll (self);
+		cancel_calls (self);
 		break;
 	default:
 		break;
@@ -469,13 +627,19 @@ dispose (GObject *object)
 	NMTailscalePlugin *self = NM_TAILSCALE_PLUGIN (object);
 
 	stop_poll (self);
+	if (self->cancellable)
+		g_cancellable_cancel (self->cancellable);
+	g_clear_object (&self->cancellable);
 	g_clear_pointer (&self->rollback, g_free);
+	g_clear_pointer (&self->pending_auth_key, g_free);
+	g_clear_pointer (&self->pending_mask, g_free);
 	G_OBJECT_CLASS (nm_tailscale_plugin_parent_class)->dispose (object);
 }
 
 static void
 nm_tailscale_plugin_init (NMTailscalePlugin *self)
 {
+	self->cancellable = g_cancellable_new ();
 }
 
 static void
