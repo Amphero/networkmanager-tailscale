@@ -28,6 +28,8 @@ typedef struct {
 	GtkWidget *login_status;
 	guint login_poll_id;
 	guint login_polls;
+	guint operator_watch_id;
+	GPid operator_pid;
 	gboolean url_opened;
 	gboolean operator_tried;
 	gboolean restore_down;
@@ -302,10 +304,17 @@ login_poll_cb (gpointer user_data)
 static void login_start (TailscaleEditor *self);
 
 static void
+reap_operator_cb (GPid pid, gint wait_status, gpointer user_data)
+{
+	g_spawn_close_pid (pid);
+}
+
+static void
 operator_done_cb (GPid pid, gint wait_status, gpointer user_data)
 {
 	TailscaleEditor *self = user_data;
 
+	self->operator_watch_id = 0;
 	g_spawn_close_pid (pid);
 	if (g_spawn_check_wait_status (wait_status, NULL)) {
 		login_start (self); /* retry, now as operator */
@@ -331,7 +340,8 @@ grant_operator (TailscaleEditor *self)
 	}
 	gtk_label_set_text (GTK_LABEL (self->login_status),
 	                    "Granting LocalAPI access (system authentication)…");
-	g_child_watch_add (pid, operator_done_cb, self);
+	self->operator_pid = pid;
+	self->operator_watch_id = g_child_watch_add (pid, operator_done_cb, self);
 }
 
 static void
@@ -390,6 +400,13 @@ dispose (GObject *object)
 	if (self->login_poll_id) {
 		g_source_remove (self->login_poll_id);
 		self->login_poll_id = 0;
+	}
+	if (self->operator_watch_id) {
+		/* the polkit prompt may outlive the dialog; the child still needs
+		 * reaping, but the callback must not touch freed widgets */
+		g_source_remove (self->operator_watch_id);
+		self->operator_watch_id = 0;
+		g_child_watch_add (self->operator_pid, reap_operator_cb, NULL);
 	}
 	g_clear_object (&self->widget);
 	g_clear_pointer (&self->exit_ips, g_ptr_array_unref);
