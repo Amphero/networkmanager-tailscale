@@ -63,8 +63,8 @@ json_quote (const char *s)
  * @out_online only turns TRUE once the control server accepted the node —
  * BackendState alone can claim "Running" from cached state */
 static gboolean
-parse_status (const char *json, char **out_state, char **out_ip4, char **out_auth_url,
-              gboolean *out_online, GError **error)
+parse_status (const char *json, char **out_state, char **out_ip4, char **out_ip6,
+              char **out_auth_url, gboolean *out_online, GError **error)
 {
 	g_autoptr(JsonParser) parser = json_parser_new ();
 	JsonObject *root;
@@ -72,6 +72,7 @@ parse_status (const char *json, char **out_state, char **out_ip4, char **out_aut
 
 	*out_state = NULL;
 	*out_ip4 = NULL;
+	*out_ip6 = NULL;
 	*out_auth_url = NULL;
 	*out_online = FALSE;
 
@@ -101,10 +102,12 @@ parse_status (const char *json, char **out_state, char **out_ip4, char **out_aut
 			for (i = 0; i < json_array_get_length (arr); i++) {
 				const char *s = json_array_get_string_element (arr, i);
 
-				if (s && strchr (s, '.')) {
+				if (!s)
+					continue;
+				if (!*out_ip4 && strchr (s, '.'))
 					*out_ip4 = g_strdup (s);
-					break;
-				}
+				else if (!*out_ip6 && strchr (s, ':'))
+					*out_ip6 = g_strdup (s);
 			}
 		}
 	}
@@ -123,13 +126,16 @@ stop_poll (NMTailscalePlugin *self)
 }
 
 static gboolean
-send_config (NMTailscalePlugin *self, const char *ip4)
+send_config (NMTailscalePlugin *self, const char *ip4, const char *ip6)
 {
-	GVariantBuilder config, ip4_config;
-	guint32 addr = 0;
+	GVariantBuilder config, ip_config;
+	guint32 addr4 = 0;
+	struct in6_addr addr6;
+	gboolean has4 = ip4 && inet_pton (AF_INET, ip4, &addr4) == 1;
+	gboolean has6 = ip6 && inet_pton (AF_INET6, ip6, &addr6) == 1;
 
-	if (inet_pton (AF_INET, ip4, &addr) != 1) {
-		g_warning ("invalid Tailscale IPv4 address: %s", ip4);
+	if (!has4 && !has6) {
+		g_warning ("no usable Tailscale address (v4: %s, v6: %s)", ip4 ?: "none", ip6 ?: "none");
 		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_BAD_IP_CONFIG);
 		return FALSE;
 	}
@@ -143,20 +149,32 @@ send_config (NMTailscalePlugin *self, const char *ip4)
 	 * never resolve via the parent device, NM creates no route from it. */
 	g_variant_builder_add (&config, "{sv}", NM_VPN_PLUGIN_CONFIG_EXT_GATEWAY,
 	                       g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, loopback6, 16, 1));
-	g_variant_builder_add (&config, "{sv}", NM_VPN_PLUGIN_CONFIG_HAS_IP4, g_variant_new_boolean (TRUE));
-	g_variant_builder_add (&config, "{sv}", NM_VPN_PLUGIN_CONFIG_HAS_IP6, g_variant_new_boolean (FALSE));
+	g_variant_builder_add (&config, "{sv}", NM_VPN_PLUGIN_CONFIG_HAS_IP4, g_variant_new_boolean (has4));
+	g_variant_builder_add (&config, "{sv}", NM_VPN_PLUGIN_CONFIG_HAS_IP6, g_variant_new_boolean (has6));
 	nm_vpn_service_plugin_set_config (NM_VPN_SERVICE_PLUGIN (self), g_variant_builder_end (&config));
 
 	/* tailscaled already configured the interface; never-default and
 	 * preserve-routes keep NM from touching routing and default route. */
-	g_variant_builder_init (&ip4_config, G_VARIANT_TYPE ("a{sv}"));
-	g_variant_builder_add (&ip4_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_ADDRESS, g_variant_new_uint32 (addr));
-	g_variant_builder_add (&ip4_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_PREFIX, g_variant_new_uint32 (32));
-	g_variant_builder_add (&ip4_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT, g_variant_new_boolean (TRUE));
-	g_variant_builder_add (&ip4_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES, g_variant_new_boolean (TRUE));
-	nm_vpn_service_plugin_set_ip4_config (NM_VPN_SERVICE_PLUGIN (self), g_variant_builder_end (&ip4_config));
+	if (has4) {
+		g_variant_builder_init (&ip_config, G_VARIANT_TYPE ("a{sv}"));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_ADDRESS, g_variant_new_uint32 (addr4));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_PREFIX, g_variant_new_uint32 (32));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT, g_variant_new_boolean (TRUE));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_PRESERVE_ROUTES, g_variant_new_boolean (TRUE));
+		nm_vpn_service_plugin_set_ip4_config (NM_VPN_SERVICE_PLUGIN (self), g_variant_builder_end (&ip_config));
+	}
+	if (has6) {
+		g_variant_builder_init (&ip_config, G_VARIANT_TYPE ("a{sv}"));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP6_CONFIG_ADDRESS,
+		                       g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE, addr6.s6_addr, 16, 1));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP6_CONFIG_PREFIX, g_variant_new_uint32 (128));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP6_CONFIG_NEVER_DEFAULT, g_variant_new_boolean (TRUE));
+		g_variant_builder_add (&ip_config, "{sv}", NM_VPN_PLUGIN_IP6_CONFIG_PRESERVE_ROUTES, g_variant_new_boolean (TRUE));
+		nm_vpn_service_plugin_set_ip6_config (NM_VPN_SERVICE_PLUGIN (self), g_variant_builder_end (&ip_config));
+	}
 
-	g_message ("tailscale is up (%s on %s)", ip4, TUNDEV);
+	g_message ("tailscale is up (%s%s%s on %s)",
+	           has4 ? ip4 : "", has4 && has6 ? ", " : "", has6 ? ip6 : "", TUNDEV);
 	return TRUE;
 }
 
@@ -170,11 +188,12 @@ monitor_cb (gpointer user_data)
 	g_autofree char *resp = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	gboolean online;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
-	if (resp && parse_status (resp, &state, &ip4, &auth_url, &online, &error)) {
+	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		self->monitor_fails = 0;
 		if (   g_strcmp0 (state, "Stopped") == 0
 		    || g_strcmp0 (state, "NeedsLogin") == 0
@@ -208,17 +227,18 @@ poll_status_cb (gpointer user_data)
 	g_autofree char *resp = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	gboolean online;
 
 	self->poll_count++;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
-	if (resp && parse_status (resp, &state, &ip4, &auth_url, &online, &error)) {
+	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		if (nm_tailscale_debug)
 			g_message ("backend state: %s online=%d%s", state, online, auth_url[0] ? " (auth pending)" : "");
-		if (g_strcmp0 (state, "Running") == 0 && ip4 && online && !auth_url[0]) {
-			if (send_config (self, ip4)) {
+		if (g_strcmp0 (state, "Running") == 0 && (ip4 || ip6) && online && !auth_url[0]) {
+			if (send_config (self, ip4, ip6)) {
 				self->monitor_fails = 0;
 				self->poll_id = g_timeout_add (MONITOR_INTERVAL_MS, monitor_cb, self);
 			} else {
@@ -267,13 +287,14 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	g_autofree char *status = NULL;
 	g_autofree char *state = NULL;
 	g_autofree char *ip4 = NULL;
+	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	g_autofree char *prefs = NULL;
 	g_autoptr(GString) mask = NULL;
 	gboolean needs_login, on, online;
 
 	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, error);
-	if (!status || !parse_status (status, &state, &ip4, &auth_url, &online, error))
+	if (!status || !parse_status (status, &state, &ip4, &ip6, &auth_url, &online, error))
 		return FALSE;
 
 	needs_login = g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0];
