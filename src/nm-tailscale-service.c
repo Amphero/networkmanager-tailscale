@@ -32,7 +32,7 @@
 typedef struct {
 	NMVpnServicePlugin parent;
 	guint poll_id;
-	guint poll_count;
+	gint64 connect_start;
 	guint monitor_fails;
 	gboolean sent_auth_key;
 } NMTailscalePlugin;
@@ -230,8 +230,7 @@ poll_status_cb (gpointer user_data)
 	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	gboolean online;
-
-	self->poll_count++;
+	gint64 elapsed_ms = (g_get_monotonic_time () - self->connect_start) / 1000;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
 	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
@@ -257,7 +256,7 @@ poll_status_cb (gpointer user_data)
 		g_warning ("polling tailscaled status failed: %s", error ? error->message : "unknown error");
 	}
 
-	if (self->poll_count * POLL_INTERVAL_MS >= CONNECT_TIMEOUT_MS) {
+	if (elapsed_ms >= CONNECT_TIMEOUT_MS) {
 		g_warning ("timeout waiting for tailscale to reach the Running state");
 		self->poll_id = 0;
 		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
@@ -338,7 +337,7 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	}
 
 	stop_poll (self);
-	self->poll_count = 0;
+	self->connect_start = g_get_monotonic_time ();
 	self->poll_id = g_timeout_add (POLL_INTERVAL_MS, poll_status_cb, self);
 	return TRUE;
 }
