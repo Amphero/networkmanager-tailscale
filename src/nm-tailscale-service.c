@@ -30,7 +30,9 @@
  * rejected — accepting one normally takes tailscaled a few seconds */
 #define AUTH_KEY_GRACE_MS    (15 * 1000)
 #define MONITOR_INTERVAL_MS  5000
-#define MONITOR_MAX_FAILURES 3
+/* a minute of transport failures before giving up: a plain tailscaled
+ * restart (package upgrade) already takes the socket away for ~20 s */
+#define MONITOR_MAX_FAILURES 12
 
 typedef struct {
 	NMVpnServicePlugin parent;
