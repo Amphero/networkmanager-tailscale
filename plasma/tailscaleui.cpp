@@ -246,8 +246,12 @@ private:
 
         /* the login only completes while tailscaled talks to the control
          * server, which it does not do while stopped — wake it up for the
-         * duration of the login */
-        m_restoreDown = !localapiGet("/localapi/v0/prefs").value(QLatin1String("WantRunning")).toBool(false);
+         * duration of the login. A failed prefs read must not count as
+         * "was down", so only restore what was actually read. */
+        long prefsCode = 0;
+        const QByteArray prefsRaw = localapiCall("GET", "/localapi/v0/prefs", QByteArray(), &prefsCode);
+        m_restoreDown = prefsCode >= 200 && prefsCode <= 299
+            && !QJsonDocument::fromJson(prefsRaw).object().value(QLatin1String("WantRunning")).toBool(false);
         if (m_restoreDown)
             setWantRunning(true);
 
