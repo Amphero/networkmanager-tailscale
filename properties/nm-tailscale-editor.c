@@ -550,6 +550,17 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 	s_vpn = nm_connection_get_setting_vpn (connection);
 	if (s_vpn)
 		key = nm_setting_vpn_get_secret (s_vpn, NM_TAILSCALE_KEY_AUTH_KEY);
+	if (s_vpn && !key && NM_IS_REMOTE_CONNECTION (connection)) {
+		/* not every host loads system-owned secrets before opening the
+		 * editor; without the key in the entry, saving would drop it */
+		g_autoptr(GVariant) secrets = NULL;
+
+		secrets = nm_remote_connection_get_secrets (NM_REMOTE_CONNECTION (connection),
+		                                            NM_SETTING_VPN_SETTING_NAME, NULL, NULL);
+		if (secrets && nm_connection_update_secrets (connection, NM_SETTING_VPN_SETTING_NAME,
+		                                             secrets, NULL))
+			key = nm_setting_vpn_get_secret (s_vpn, NM_TAILSCALE_KEY_AUTH_KEY);
+	}
 	if (   s_vpn
 	    && (   nm_setting_vpn_get_data_item (s_vpn, NM_TAILSCALE_KEY_ACCEPT_DNS)
 	        || nm_setting_vpn_get_data_item (s_vpn, NM_TAILSCALE_KEY_ACCEPT_ROUTES)
