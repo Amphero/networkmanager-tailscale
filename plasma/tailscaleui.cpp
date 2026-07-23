@@ -11,6 +11,8 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDesktopServices>
 #include <QFormLayout>
 #include <QJsonArray>
@@ -317,13 +319,24 @@ private:
         }
     }
 
+    /* true while NM runs our VPN service daemon, i.e. a tailscale NM
+     * connection is active or being activated right now */
+    static bool vpnServiceActive()
+    {
+        const auto *iface = QDBusConnection::systemBus().interface();
+        return iface && iface->isServiceRegistered(QStringLiteral(NM_DBUS_SERVICE_TAILSCALE));
+    }
+
     void finishLogin(const QString &message)
     {
         m_loginStatus->setText(message);
         m_loginButton->setEnabled(true);
         if (m_restoreDown) {
-            setWantRunning(false);
             m_restoreDown = false;
+            /* NM may have activated the connection while the login ran;
+             * WantRunning belongs to the service daemon then */
+            if (!vpnServiceActive())
+                setWantRunning(false);
         }
     }
 
