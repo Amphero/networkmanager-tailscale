@@ -206,7 +206,7 @@ prefill_from_prefs (TailscaleEditor *self, gboolean *dns, gboolean *routes, guin
 #define LOGIN_TIMEOUT_POLLS 180 /* seconds */
 
 static void
-get_login_state (char **out_state, char **out_auth_url)
+get_login_state (char **out_state, char **out_auth_url, gboolean *out_online)
 {
 	g_autofree char *resp = NULL;
 	g_autoptr(JsonParser) parser = json_parser_new ();
@@ -215,6 +215,7 @@ get_login_state (char **out_state, char **out_auth_url)
 
 	*out_state = NULL;
 	*out_auth_url = NULL;
+	*out_online = FALSE;
 
 	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
@@ -225,6 +226,11 @@ get_login_state (char **out_state, char **out_auth_url)
 	root = json_node_get_object (node);
 	*out_state = g_strdup (json_object_get_string_member_with_default (root, "BackendState", ""));
 	*out_auth_url = g_strdup (json_object_get_string_member_with_default (root, "AuthURL", ""));
+
+	node = json_object_get_member (root, "Self");
+	if (node && JSON_NODE_HOLDS_OBJECT (node))
+		*out_online = json_object_get_boolean_member_with_default (json_node_get_object (node),
+		                                                           "Online", FALSE);
 }
 
 /* FALSE when the prefs could not be read — not the same as WantRunning
@@ -301,14 +307,18 @@ login_poll_cb (gpointer user_data)
 	TailscaleEditor *self = user_data;
 	g_autofree char *state = NULL;
 	g_autofree char *auth_url = NULL;
+	gboolean online = FALSE;
 
 	self->login_polls++;
-	get_login_state (&state, &auth_url);
+	get_login_state (&state, &auth_url, &online);
 
 	/* a pending AuthURL means the login is not done, no matter what
-	 * BackendState claims from cached state */
+	 * BackendState claims from cached state — and right after the login
+	 * request the AuthURL may not be filled in yet, so "Running" only
+	 * counts once the control server accepted the node (Online) */
 	if (   !(auth_url && auth_url[0])
-	    && (g_strcmp0 (state, "Running") == 0 || g_strcmp0 (state, "Stopped") == 0)) {
+	    && (   (g_strcmp0 (state, "Running") == 0 && online)
+	        || (g_strcmp0 (state, "Stopped") == 0 && self->login_polls >= 3))) {
 		login_finish (self, "Device is registered — you can connect now.");
 		return G_SOURCE_REMOVE;
 	}

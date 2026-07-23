@@ -299,10 +299,15 @@ private:
         const QJsonObject status = localapiGet("/localapi/v0/status");
         const QString state = status.value(QLatin1String("BackendState")).toString();
         const QString authUrl = status.value(QLatin1String("AuthURL")).toString();
+        const bool online = status.value(QLatin1String("Self")).toObject().value(QLatin1String("Online")).toBool(false);
 
         /* a pending AuthURL means the login is not done, no matter what
-         * BackendState claims from cached state */
-        if (authUrl.isEmpty() && (state == QLatin1String("Running") || state == QLatin1String("Stopped"))) {
+         * BackendState claims from cached state — and right after the login
+         * request the AuthURL may not be filled in yet, so "Running" only
+         * counts once the control server accepted the node (Online) */
+        if (authUrl.isEmpty()
+            && ((state == QLatin1String("Running") && online)
+                || (state == QLatin1String("Stopped") && m_polls >= 3))) {
             m_pollTimer->stop();
             finishLogin(QStringLiteral("Device is registered — you can connect now."));
             return;
