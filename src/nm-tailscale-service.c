@@ -26,6 +26,9 @@
 #define TUNDEV               "tailscale0"
 #define POLL_INTERVAL_MS     500
 #define CONNECT_TIMEOUT_MS   (90 * 1000)
+/* how long a submitted auth key may sit in NeedsLogin before we call it
+ * rejected — accepting one normally takes tailscaled a few seconds */
+#define AUTH_KEY_GRACE_MS    (15 * 1000)
 #define MONITOR_INTERVAL_MS  5000
 #define MONITOR_MAX_FAILURES 3
 
@@ -245,12 +248,22 @@ poll_status_cb (gpointer user_data)
 			}
 			return G_SOURCE_REMOVE;
 		}
-		if ((g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0]) && !self->sent_auth_key) {
-			g_warning ("tailscale requires (re-)authentication; use the browser login "
-			           "in the connection editor or store an auth key in the connection");
-			self->poll_id = 0;
-			nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
-			return G_SOURCE_REMOVE;
+		if (g_strcmp0 (state, "NeedsLogin") == 0 || auth_url[0]) {
+			if (!self->sent_auth_key) {
+				g_warning ("tailscale requires (re-)authentication; use the browser login "
+				           "in the connection editor or store an auth key in the connection");
+				self->poll_id = 0;
+				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
+				return G_SOURCE_REMOVE;
+			}
+			/* the key already went to /start: an AuthURL or a lingering
+			 * NeedsLogin means the control server did not accept it */
+			if (auth_url[0] || elapsed_ms >= AUTH_KEY_GRACE_MS) {
+				g_warning ("tailscale did not accept the stored auth key (expired or revoked?)");
+				self->poll_id = 0;
+				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
+				return G_SOURCE_REMOVE;
+			}
 		}
 	} else {
 		g_warning ("polling tailscaled status failed: %s", error ? error->message : "unknown error");
