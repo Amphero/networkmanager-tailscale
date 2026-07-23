@@ -85,3 +85,62 @@ nm_tailscale_localapi_call (const char *method, const char *path, const char *bo
 	}
 	return g_string_free (resp, FALSE);
 }
+
+/*****************************************************************************/
+
+typedef struct {
+	char *method;
+	char *path;
+	char *body;
+	long timeout_ms;
+	long http_code;
+} CallData;
+
+static void
+call_data_free (CallData *data)
+{
+	g_free (data->method);
+	g_free (data->path);
+	g_free (data->body);
+	g_free (data);
+}
+
+static void
+call_thread (GTask *task, gpointer source, gpointer task_data, GCancellable *cancellable)
+{
+	CallData *data = task_data;
+	GError *error = NULL;
+	char *resp;
+
+	resp = nm_tailscale_localapi_call (data->method, data->path, data->body,
+	                                   data->timeout_ms, &data->http_code, &error);
+	if (resp)
+		g_task_return_pointer (task, resp, g_free);
+	else
+		g_task_return_error (task, error);
+}
+
+void
+nm_tailscale_localapi_call_async (const char *method, const char *path, const char *body,
+                                  long timeout_ms, GCancellable *cancellable,
+                                  GAsyncReadyCallback callback, gpointer user_data)
+{
+	GTask *task = g_task_new (NULL, cancellable, callback, user_data);
+	CallData *data = g_new0 (CallData, 1);
+
+	data->method = g_strdup (method);
+	data->path = g_strdup (path);
+	data->body = g_strdup (body);
+	data->timeout_ms = timeout_ms;
+	g_task_set_task_data (task, data, (GDestroyNotify) call_data_free);
+	g_task_run_in_thread (task, call_thread);
+	g_object_unref (task);
+}
+
+char *
+nm_tailscale_localapi_call_finish (GAsyncResult *result, long *out_http_code, GError **error)
+{
+	if (out_http_code)
+		*out_http_code = ((CallData *) g_task_get_task_data (G_TASK (result)))->http_code;
+	return g_task_propagate_pointer (G_TASK (result), error);
+}
