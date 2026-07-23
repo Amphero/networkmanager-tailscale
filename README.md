@@ -1,39 +1,44 @@
 # NetworkManager-Tailscale
 
-NetworkManager VPN plugin for [Tailscale](https://tailscale.com). Drives
-tailscaled through its LocalAPI (`WantRunning` ≙ `tailscale up`/`down`);
-tailscaled itself manages the interface, routes and DNS.
+A NetworkManager VPN plugin for [Tailscale](https://tailscale.com).
 
-- Connect/disconnect from GNOME Settings, KDE Plasma (System Settings and
-  the network applet) or `nmcli`
-- Device registration via auth key (stored as an NM secret) or browser
-  login; missing operator rights are granted through polkit
-- Exit node selection, accept-DNS, accept-routes; new connections are
-  pre-filled with the current tailscaled preferences
-- An external `tailscale down`/logout disconnects the NM connection
-  automatically
+It drives tailscaled over the LocalAPI, so connecting comes down to
+`tailscale up` and disconnecting to `tailscale down`. The actual networking
+(interface, routes, DNS) stays with tailscaled, NetworkManager never touches
+it.
 
-| Directory | Contents |
-|---|---|
-| `src/` | VPN service daemon (C, libnm `NMVpnServicePlugin`) |
-| `properties/` | Editor plugin core (libnm) + GTK4 editor for GNOME |
-| `plasma/` | plasma-nm plugin (Qt/C++) + metadata stub as fallback |
-| `shared/` | Key definitions, LocalAPI HTTP client |
-| `tests/` | D-Bus smoke test against a mocked tailscaled |
+What you get:
+
+- Connect and disconnect from GNOME Settings, KDE Plasma (System Settings
+  and the network applet) or nmcli
+- Device registration with an auth key or through browser login. The auth
+  key is stored as an NM secret. If your user is missing operator rights,
+  polkit asks and grants them
+- Exit node, accept-dns and accept-routes settings. New connections start
+  out with whatever tailscaled is currently set to
+- Running `tailscale down` or logging out outside of NM also disconnects
+  the NM connection
+
+Code layout: `src/` has the VPN service daemon (C, libnm), `properties/`
+the connection editor (libnm core plus a GTK4 UI), `plasma/` the plasma-nm
+plugin (Qt/C++) and a metadata stub as fallback, `shared/` common key
+definitions and the LocalAPI HTTP client, `tests/` a D-Bus smoke test
+against a mocked tailscaled.
 
 ## Building
 
-Builds run in rootless Podman containers (Arch based); artifacts end up in
-`./dist/`:
+Everything builds in a rootless Podman container (Arch based), the results
+land in `./dist/`:
 
 ```sh
-make container   # create the build image
+make container   # build the image once
 make build
 make check       # smoke test: private D-Bus + LocalAPI mock
 ```
 
-The plasma-nm plugin builds against the private headers of the installed
-plasma-nm version and must be rebuilt after its updates:
+The plasma-nm plugin needs private plasma-nm headers matching the installed
+version, so it has to be rebuilt whenever plasma-nm updates. Get the
+matching sources with:
 
 ```sh
 git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f1) \
@@ -42,12 +47,12 @@ git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f
 
 ## Arch packages
 
-Prebuilt packages are attached to the
-[releases](https://github.com/Amphero/networkmanager-tailscale/releases) —
-download and install with `sudo pacman -U <package>` (dependencies are
-resolved from the official repos), then restart NetworkManager.
+Prebuilt x86_64 packages are attached to the
+[releases](https://github.com/Amphero/networkmanager-tailscale/releases).
+Install with `sudo pacman -U <package>` and restart NetworkManager,
+dependencies come from the official repos.
 
-To build them yourself, `make pkg` builds two packages from the committed
+To build the packages yourself, `make pkg` builds both from the committed
 state (HEAD) into `./dist/`:
 
 ```sh
@@ -58,16 +63,17 @@ sudo systemctl reload dbus && sudo systemctl restart NetworkManager
 ```
 
 Remove with `sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale`.
-The plasma package ships a pacman hook that prints a rebuild reminder
-whenever plasma-nm is updated.
-The PKGBUILD in `packaging/` also works standalone: it fetches the release
-tarball of tag `v<pkgver>` with pinned checksums (`make pkg` skips the
-checksum verification since it builds a local HEAD snapshot instead).
+The plasma package installs a pacman hook that prints a rebuild reminder
+when plasma-nm gets updated.
+
+The PKGBUILD in `packaging/` also works standalone. It fetches the release
+tarball for tag `v<pkgver>` and verifies pinned checksums. `make pkg`
+builds a local HEAD snapshot instead and skips the checksum check.
 
 ## Manual installation
 
-Prerequisite: `tailscale` is installed and `tailscaled` is running
-(`systemctl enable --now tailscaled`).
+You need `tailscale` installed and `tailscaled` running
+(`systemctl enable --now tailscaled`). Then:
 
 ```sh
 sudo install -m755 dist/nm-tailscale-service                       /usr/lib/NetworkManager/nm-tailscale-service
@@ -82,9 +88,9 @@ sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
 ```
 
-If the plasma-nm plugin no longer loads after a Plasma update, install the
-stub to the same path — connecting through the applet keeps working, only
-the settings dialog is unavailable:
+If the plasma-nm plugin stops loading after a Plasma update, install the
+stub to the same path until you get around to rebuilding. Connecting
+through the applet keeps working, only the settings dialog is gone:
 
 ```sh
 sudo install -m755 dist/plasmanetworkmanagement_tailscaleui-stub.so \
@@ -93,12 +99,12 @@ sudo install -m755 dist/plasmanetworkmanagement_tailscaleui-stub.so \
 
 ## Usage
 
-**GNOME:** Settings → Network → VPN → “+” → Tailscale.
+GNOME: Settings -> Network -> VPN -> "+" -> Tailscale.
 
-**KDE Plasma:** System Settings → Network → Connections → “+” → VPN →
-Tailscale; toggle via the network applet.
+KDE Plasma: System Settings -> Network -> Connections -> "+" -> VPN ->
+Tailscale. Toggle via the network applet.
 
-**nmcli:**
+nmcli:
 
 ```sh
 nmcli connection add type vpn con-name Tailscale vpn-type tailscale
@@ -109,24 +115,26 @@ nmcli connection modify Tailscale +vpn.data "exit-node=100.x.y.z"       # option
 nmcli connection up Tailscale
 ```
 
-The auth key is only needed while tailscaled is logged out; alternatively
-run `tailscale login` once or use the browser login button in the editor.
-Without the `vpn.data` entries the corresponding tailscaled preferences are
-left untouched.
+The auth key is only needed while tailscaled is logged out. You can also
+run `tailscale login` once, or use the browser login button in the editor.
+Any `vpn.data` entry you leave out keeps the corresponding tailscaled
+preference as it is.
 
 ## Troubleshooting
 
+The service logs to the NetworkManager journal as `nm-tailscale-service`:
+
 ```sh
-journalctl -u NetworkManager -f      # messages appear as nm-tailscale-service
+journalctl -u NetworkManager -f
 ```
 
-If the exit node list in the editor stays empty, the LocalAPI is not
-readable: `sudo tailscale set --operator=$USER`.
+An empty exit node list in the editor means your user cannot read the
+LocalAPI. Fix: `sudo tailscale set --operator=$USER`.
 
 ## Uninstall
 
-Package installations: `sudo pacman -R networkmanager-tailscale-plasma
-networkmanager-tailscale`. For a manual installation:
+Package installs: `sudo pacman -R networkmanager-tailscale-plasma
+networkmanager-tailscale`. Manual installs:
 
 ```sh
 nmcli connection delete Tailscale
@@ -142,4 +150,4 @@ sudo systemctl restart NetworkManager
 
 ## License
 
-GPL-2.0-or-later
+GPL-2.0-or-later, see [LICENSE](LICENSE).
