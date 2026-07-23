@@ -104,7 +104,7 @@ populate_exit_nodes (TailscaleEditor *self)
 	JsonObjectIter iter;
 	const char *member;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, NULL);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2500, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
 		return;
 	node = json_parser_get_root (parser);
@@ -165,7 +165,7 @@ prefill_from_prefs (TailscaleEditor *self, gboolean *dns, gboolean *routes, guin
 	const char *exit_ip, *exit_id;
 	guint i;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, 2500, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
 		return;
 	node = json_parser_get_root (parser);
@@ -217,7 +217,7 @@ get_login_state (char **out_state, char **out_auth_url, gboolean *out_online)
 	*out_auth_url = NULL;
 	*out_online = FALSE;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, NULL);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2500, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
 		return;
 	node = json_parser_get_root (parser);
@@ -243,7 +243,7 @@ prefs_get_want_running (gboolean *out_want)
 	JsonNode *node;
 
 	*out_want = FALSE;
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, 2500, NULL, NULL);
 	if (!resp || !json_parser_load_from_data (parser, resp, -1, NULL))
 		return FALSE;
 	node = json_parser_get_root (parser);
@@ -262,7 +262,7 @@ set_want_running (gboolean on)
 	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs",
 	                                   on ? "{\"WantRunning\":true,\"WantRunningSet\":true}"
 	                                      : "{\"WantRunning\":false,\"WantRunningSet\":true}",
-	                                   NULL, NULL);
+	                                   2500, NULL, NULL);
 }
 
 /* TRUE while NM runs our VPN service daemon, i.e. a tailscale NM
@@ -399,7 +399,7 @@ login_start (TailscaleEditor *self)
 	if (self->restore_down)
 		set_want_running (TRUE);
 
-	resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/login-interactive", "", &http_code, &error);
+	resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/login-interactive", "", 2500, &http_code, &error);
 	if (!resp) {
 		if (http_code == 403 && !self->operator_tried) {
 			self->operator_tried = TRUE;
