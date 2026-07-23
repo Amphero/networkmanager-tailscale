@@ -39,7 +39,9 @@
 static QByteArray localapiCall(const char *method, const char *path, const QByteArray &body, long *httpCode = nullptr, bool *transportOk = nullptr)
 {
     long code = 0;
-    char *resp = nm_tailscale_localapi_call(method, path, body.isNull() ? nullptr : body.constData(), &code, nullptr);
+    /* runs on the UI thread — keep the timeout well below anything a user
+     * would notice as a hang */
+    char *resp = nm_tailscale_localapi_call(method, path, body.isNull() ? nullptr : body.constData(), 2500, &code, nullptr);
     const QByteArray result(resp ? resp : "");
 
     g_free(resp);

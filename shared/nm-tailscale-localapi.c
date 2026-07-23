@@ -27,7 +27,8 @@ write_cb (char *ptr, size_t size, size_t nmemb, void *data)
 }
 
 char *
-nm_tailscale_localapi_call (const char *method, const char *path, const char *body, long *out_http_code, GError **error)
+nm_tailscale_localapi_call (const char *method, const char *path, const char *body,
+                            long timeout_ms, long *out_http_code, GError **error)
 {
 	static gsize curl_inited = 0;
 	CURL *curl;
@@ -52,7 +53,7 @@ nm_tailscale_localapi_call (const char *method, const char *path, const char *bo
 		curl_easy_setopt (curl, CURLOPT_POSTFIELDS, body);
 	curl_easy_setopt (curl, CURLOPT_WRITEFUNCTION, write_cb);
 	curl_easy_setopt (curl, CURLOPT_WRITEDATA, resp);
-	curl_easy_setopt (curl, CURLOPT_TIMEOUT_MS, 5000L);
+	curl_easy_setopt (curl, CURLOPT_TIMEOUT_MS, timeout_ms > 0 ? timeout_ms : 5000L);
 	curl_easy_setopt (curl, CURLOPT_NOSIGNAL, 1L);
 
 	rc = curl_easy_perform (curl);

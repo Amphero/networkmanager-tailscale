@@ -175,7 +175,7 @@ apply_rollback (NMTailscalePlugin *self)
 
 	if (!self->rollback)
 		return;
-	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", self->rollback, NULL, NULL);
+	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", self->rollback, 0, NULL, NULL);
 	if (!resp)
 		g_warning ("could not restore the previous tailscaled prefs");
 	g_clear_pointer (&self->rollback, g_free);
@@ -248,7 +248,7 @@ monitor_cb (gpointer user_data)
 	g_autofree char *auth_url = NULL;
 	gboolean online;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, &error);
 	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		self->monitor_fails = 0;
 		if (   g_strcmp0 (state, "Stopped") == 0
@@ -288,7 +288,7 @@ poll_status_cb (gpointer user_data)
 	gboolean online;
 	gint64 elapsed_ms = (g_get_monotonic_time () - self->connect_start) / 1000;
 
-	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, &error);
+	resp = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, &error);
 	if (resp && parse_status (resp, &state, &ip4, &ip6, &auth_url, &online, &error)) {
 		if (nm_tailscale_debug)
 			g_message ("backend state: %s online=%d%s", state, online, auth_url[0] ? " (auth pending)" : "");
@@ -365,7 +365,7 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	gboolean needs_login, online;
 	gboolean set_dns, set_routes, dns_on = FALSE, routes_on = FALSE;
 
-	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, error);
+	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, 2000, NULL, error);
 	if (!status || !parse_status (status, &state, &ip4, &ip6, &auth_url, &online, error))
 		return FALSE;
 
@@ -396,11 +396,11 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	}
 	g_string_append_c (mask, '}');
 
-	old_prefs = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
+	old_prefs = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, 2000, NULL, NULL);
 	g_clear_pointer (&self->rollback, g_free);
 	self->rollback = build_rollback (old_prefs, set_dns, set_routes, exit_node != NULL);
 
-	prefs = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", mask->str, NULL, error);
+	prefs = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", mask->str, 0, NULL, error);
 	if (!prefs)
 		return FALSE;
 
@@ -410,7 +410,7 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 		g_autofree char *body = g_strdup_printf ("{\"AuthKey\":%s}", quoted);
 		g_autofree char *resp = NULL;
 
-		resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/start", body, NULL, error);
+		resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/start", body, 0, NULL, error);
 		if (!resp) {
 			apply_rollback (self);
 			return FALSE;
@@ -441,7 +441,7 @@ real_disconnect (NMVpnServicePlugin *plugin, GError **error)
 
 	stop_poll (self);
 	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs",
-	                                   "{\"WantRunning\":false,\"WantRunningSet\":true}", NULL, error);
+	                                   "{\"WantRunning\":false,\"WantRunningSet\":true}", 0, NULL, error);
 	return resp != NULL;
 }
 
