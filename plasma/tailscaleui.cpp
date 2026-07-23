@@ -26,6 +26,7 @@
 #include <QUrl>
 
 #include <KPluginFactory>
+#include <KUser>
 
 #include "settingwidget.h"
 #include "vpnuiplugin.h"
@@ -292,7 +293,7 @@ private:
                 finishLogin(QStringLiteral("Could not grant LocalAPI access (authentication cancelled?)."));
         });
         m_loginStatus->setText(QStringLiteral("Granting LocalAPI access (system authentication)…"));
-        proc->start(QStringLiteral("pkexec"), {QStringLiteral("tailscale"), QStringLiteral("set"), QStringLiteral("--operator=") + qEnvironmentVariable("USER")});
+        proc->start(QStringLiteral("pkexec"), {QStringLiteral("tailscale"), QStringLiteral("set"), QStringLiteral("--operator=") + KUser().loginName()});
     }
 
     void pollLogin()
