@@ -38,6 +38,7 @@ typedef struct {
 	gint64 connect_start;
 	guint monitor_fails;
 	gboolean sent_auth_key;
+	char *rollback; /* prefs PATCH undoing real_connect, for failed connects */
 } NMTailscalePlugin;
 
 typedef struct {
@@ -126,6 +127,56 @@ stop_poll (NMTailscalePlugin *self)
 		g_source_remove (self->poll_id);
 		self->poll_id = 0;
 	}
+}
+
+/* captures the prefs real_connect is about to overwrite, so a failed
+ * connect does not leave the connection's settings behind in tailscaled */
+static char *
+build_rollback (const char *prefs_json, gboolean set_dns, gboolean set_routes, gboolean set_exit)
+{
+	g_autoptr(JsonParser) parser = json_parser_new ();
+	JsonNode *node;
+	JsonObject *root;
+	GString *out;
+
+	if (!prefs_json || !json_parser_load_from_data (parser, prefs_json, -1, NULL))
+		return NULL;
+	node = json_parser_get_root (parser);
+	if (!node || !JSON_NODE_HOLDS_OBJECT (node))
+		return NULL;
+	root = json_node_get_object (node);
+
+	out = g_string_new (NULL);
+	g_string_append_printf (out, "{\"WantRunning\":%s,\"WantRunningSet\":true",
+	                        json_object_get_boolean_member_with_default (root, "WantRunning", FALSE) ? "true" : "false");
+	if (set_dns)
+		g_string_append_printf (out, ",\"CorpDNS\":%s,\"CorpDNSSet\":true",
+		                        json_object_get_boolean_member_with_default (root, "CorpDNS", TRUE) ? "true" : "false");
+	if (set_routes)
+		g_string_append_printf (out, ",\"RouteAll\":%s,\"RouteAllSet\":true",
+		                        json_object_get_boolean_member_with_default (root, "RouteAll", FALSE) ? "true" : "false");
+	if (set_exit) {
+		g_autofree char *ip = json_quote (json_object_get_string_member_with_default (root, "ExitNodeIP", ""));
+		g_autofree char *id = json_quote (json_object_get_string_member_with_default (root, "ExitNodeID", ""));
+
+		g_string_append_printf (out, ",\"ExitNodeIP\":%s,\"ExitNodeIPSet\":true"
+		                             ",\"ExitNodeID\":%s,\"ExitNodeIDSet\":true", ip, id);
+	}
+	g_string_append_c (out, '}');
+	return g_string_free (out, FALSE);
+}
+
+static void
+apply_rollback (NMTailscalePlugin *self)
+{
+	g_autofree char *resp = NULL;
+
+	if (!self->rollback)
+		return;
+	resp = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", self->rollback, NULL, NULL);
+	if (!resp)
+		g_warning ("could not restore the previous tailscaled prefs");
+	g_clear_pointer (&self->rollback, g_free);
 }
 
 static gboolean
@@ -241,10 +292,12 @@ poll_status_cb (gpointer user_data)
 			g_message ("backend state: %s online=%d%s", state, online, auth_url[0] ? " (auth pending)" : "");
 		if (g_strcmp0 (state, "Running") == 0 && (ip4 || ip6) && online && !auth_url[0]) {
 			if (send_config (self, ip4, ip6)) {
+				g_clear_pointer (&self->rollback, g_free);
 				self->monitor_fails = 0;
 				self->poll_id = g_timeout_add (MONITOR_INTERVAL_MS, monitor_cb, self);
 			} else {
 				self->poll_id = 0;
+				apply_rollback (self);
 			}
 			return G_SOURCE_REMOVE;
 		}
@@ -253,6 +306,7 @@ poll_status_cb (gpointer user_data)
 				g_warning ("tailscale requires (re-)authentication; use the browser login "
 				           "in the connection editor or store an auth key in the connection");
 				self->poll_id = 0;
+				apply_rollback (self);
 				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
 				return G_SOURCE_REMOVE;
 			}
@@ -261,6 +315,7 @@ poll_status_cb (gpointer user_data)
 			if (auth_url[0] || elapsed_ms >= AUTH_KEY_GRACE_MS) {
 				g_warning ("tailscale did not accept the stored auth key (expired or revoked?)");
 				self->poll_id = 0;
+				apply_rollback (self);
 				nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_LOGIN_FAILED);
 				return G_SOURCE_REMOVE;
 			}
@@ -272,6 +327,7 @@ poll_status_cb (gpointer user_data)
 	if (elapsed_ms >= CONNECT_TIMEOUT_MS) {
 		g_warning ("timeout waiting for tailscale to reach the Running state");
 		self->poll_id = 0;
+		apply_rollback (self);
 		nm_vpn_service_plugin_failure (NM_VPN_SERVICE_PLUGIN (self), NM_VPN_PLUGIN_FAILURE_CONNECT_FAILED);
 		return G_SOURCE_REMOVE;
 	}
@@ -302,8 +358,10 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 	g_autofree char *ip6 = NULL;
 	g_autofree char *auth_url = NULL;
 	g_autofree char *prefs = NULL;
+	g_autofree char *old_prefs = NULL;
 	g_autoptr(GString) mask = NULL;
-	gboolean needs_login, on, online;
+	gboolean needs_login, online;
+	gboolean set_dns, set_routes, dns_on = FALSE, routes_on = FALSE;
 
 	status = nm_tailscale_localapi_call ("GET", "/localapi/v0/status", NULL, NULL, error);
 	if (!status || !parse_status (status, &state, &ip4, &ip6, &auth_url, &online, error))
@@ -319,11 +377,13 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 
 	/* the equivalent of `tailscale up`; the optional settings are only
 	 * touched when the connection carries the corresponding data item */
+	set_dns = data_item_bool (s_vpn, NM_TAILSCALE_KEY_ACCEPT_DNS, &dns_on);
+	set_routes = data_item_bool (s_vpn, NM_TAILSCALE_KEY_ACCEPT_ROUTES, &routes_on);
 	mask = g_string_new ("{\"WantRunning\":true,\"WantRunningSet\":true");
-	if (data_item_bool (s_vpn, NM_TAILSCALE_KEY_ACCEPT_DNS, &on))
-		g_string_append_printf (mask, ",\"CorpDNS\":%s,\"CorpDNSSet\":true", on ? "true" : "false");
-	if (data_item_bool (s_vpn, NM_TAILSCALE_KEY_ACCEPT_ROUTES, &on))
-		g_string_append_printf (mask, ",\"RouteAll\":%s,\"RouteAllSet\":true", on ? "true" : "false");
+	if (set_dns)
+		g_string_append_printf (mask, ",\"CorpDNS\":%s,\"CorpDNSSet\":true", dns_on ? "true" : "false");
+	if (set_routes)
+		g_string_append_printf (mask, ",\"RouteAll\":%s,\"RouteAllSet\":true", routes_on ? "true" : "false");
 	if (exit_node) {
 		g_autofree char *quoted = json_quote (exit_node);
 
@@ -333,6 +393,10 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 		                              ",\"ExitNodeID\":\"\",\"ExitNodeIDSet\":true", quoted);
 	}
 	g_string_append_c (mask, '}');
+
+	old_prefs = nm_tailscale_localapi_call ("GET", "/localapi/v0/prefs", NULL, NULL, NULL);
+	g_clear_pointer (&self->rollback, g_free);
+	self->rollback = build_rollback (old_prefs, set_dns, set_routes, exit_node != NULL);
 
 	prefs = nm_tailscale_localapi_call ("PATCH", "/localapi/v0/prefs", mask->str, NULL, error);
 	if (!prefs)
@@ -345,8 +409,10 @@ real_connect (NMVpnServicePlugin *plugin, NMConnection *connection, GError **err
 		g_autofree char *resp = NULL;
 
 		resp = nm_tailscale_localapi_call ("POST", "/localapi/v0/start", body, NULL, error);
-		if (!resp)
+		if (!resp) {
+			apply_rollback (self);
 			return FALSE;
+		}
 	}
 
 	stop_poll (self);
@@ -398,7 +464,10 @@ state_changed_cb (NMTailscalePlugin *self, NMVpnServiceState state, gpointer use
 static void
 dispose (GObject *object)
 {
-	stop_poll (NM_TAILSCALE_PLUGIN (object));
+	NMTailscalePlugin *self = NM_TAILSCALE_PLUGIN (object);
+
+	stop_poll (self);
+	g_clear_pointer (&self->rollback, g_free);
 	G_OBJECT_CLASS (nm_tailscale_plugin_parent_class)->dispose (object);
 }
 
