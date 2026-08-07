@@ -3,6 +3,7 @@ name=tailscale
 service=org.freedesktop.NetworkManager.tailscale
 program=/usr/lib/NetworkManager/nm-tailscale-service
 supports-multiple-connections=false
+supports-safe-private-file-access=true
 
 [libnm]
 plugin=/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so
