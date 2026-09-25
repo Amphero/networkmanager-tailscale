@@ -1,8 +1,8 @@
-# Build-Artefakte
+# Build output
 dist/
 
-# Fremd-Repositories (Referenz/Build-Abhängigkeit, siehe README)
+# Third-party checkouts (build reference, see README)
 reference/
 
-# Paketbau
+# Packaging
 packaging/*.tar.gz

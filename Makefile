@@ -1,4 +1,4 @@
-# Host-Seite: alles läuft in rootless Podman, nichts wird auf dem Host installiert.
+# Host side: everything runs in rootless Podman, nothing gets installed on the host.
 IMAGE  ?= nm-tailscale-plugin-build
 PODMAN ?= podman
 RUN     = $(PODMAN) run --rm -v "$(CURDIR)":/src -w /src $(IMAGE)
@@ -17,7 +17,7 @@ shell:
 
 PKGVER = $(shell sed -n 's/^pkgver=//p' packaging/PKGBUILD)
 
-# Arch-Pakete aus dem committeten Stand (HEAD) bauen -> dist/*.pkg.tar.zst
+# Build the Arch packages from the committed state (HEAD) -> dist/*.pkg.tar.zst
 pkg:
 	git archive --format=tar.gz --prefix=networkmanager-tailscale-$(PKGVER)/ \
 	    -o packaging/networkmanager-tailscale-$(PKGVER).tar.gz HEAD

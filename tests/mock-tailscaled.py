@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Minimal tailscaled-LocalAPI-Mock über einen Unix-Socket.
+"""Minimal tailscaled LocalAPI mock on a Unix socket.
 
-Startet im Zustand NeedsLogin. Ein POST /localapi/v0/start mit AuthKey
-loggt ein, PATCH /localapi/v0/prefs schaltet WantRunning. Alle Requests
-werden für die Assertions des Smoke-Tests in eine Logdatei geschrieben.
+Starts in NeedsLogin. A POST /localapi/v0/start with an AuthKey logs in,
+PATCH /localapi/v0/prefs toggles WantRunning. Every request is written to
+a log file for the smoke test's assertions.
 """
 import json
 import os

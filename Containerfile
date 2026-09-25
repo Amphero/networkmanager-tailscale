@@ -1,5 +1,5 @@
-# Build-Umgebung für das NetworkManager-Tailscale-Plugin.
-# Arch-Basis, damit die Artefakte ABI-kompatibel zum Arch-Host sind.
+# Build environment for the NetworkManager Tailscale plugin.
+# Arch based, so the binaries are ABI compatible with an Arch host.
 FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed \

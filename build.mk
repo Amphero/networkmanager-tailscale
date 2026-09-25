@@ -1,4 +1,4 @@
-# Läuft IM Container: make -f build.mk [all|check|clean]
+# Runs INSIDE the container: make -f build.mk [all|check|clean]
 CC     ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 DIST   := dist
@@ -34,9 +34,9 @@ $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-edito
 	    -Wl,--version-script=properties/libnm-gtk4-vpn-plugin-tailscale-editor.ver \
 	    $$(pkg-config --cflags --libs $(PKG_EDITOR))
 
-# Natives plasma-nm-Plugin: baut gegen die privaten Header der exakt
-# installierten plasma-nm-Version (reference/plasma-nm, Tag muss zur
-# Host-Version passen) und linkt gegen das installierte libplasmanm_editor.so.
+# Native plasma-nm plugin: built against the private headers of the exact
+# installed plasma-nm version (reference/plasma-nm, the tag has to match the
+# host version) and linked against the installed libplasmanm_editor.so.
 PLASMA_INC  = -Ireference/plasma-nm/libs/editor -Ireference/plasma-nm/libs/editor/widgets -Iplasma \
               -I/usr/include/KF6/KCoreAddons -I/usr/include/KF6/KWidgetsAddons -I/usr/include/KF6/NetworkManagerQt
 PLASMA_PKGS = Qt6Widgets Qt6DBus Qt6Concurrent libnm libcurl
@@ -53,8 +53,8 @@ $(DIST)/plasmanetworkmanagement_tailscaleui.so: plasma/tailscaleui.cpp $(LOCALAP
 	    /usr/lib/libplasmanm_editor.so /usr/lib/libplasmanm_internal.so
 	rm -f $(DIST)/tailscaleui.moc $(DIST)/localapi.o
 
-# Metadaten-Stub als Fallback, falls das native Plugin nach einem
-# Plasma-Update nicht mehr laedt (gleicher Zielpfad/-name).
+# Metadata stub as a fallback in case the native plugin stops loading
+# after a Plasma update (same target path and name).
 $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so: plasma/stub.cpp plasma/plasmanetworkmanagement_tailscaleui.json | $(DIST)
 	/usr/lib/qt6/moc plasma/stub.cpp -o $(DIST)/stub.moc
 	g++ $(CFLAGS) -std=c++17 -fPIC -shared -Iplasma -I$(DIST) -o $@ plasma/stub.cpp \

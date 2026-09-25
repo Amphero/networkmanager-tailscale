@@ -4,6 +4,6 @@ Type = Package
 Target = plasma-nm
 
 [Action]
-Description = networkmanager-tailscale-plasma: plasma-nm wurde aktualisiert
+Description = networkmanager-tailscale-plasma: plasma-nm was updated
 When = PostTransaction
-Exec = /usr/bin/echo "==> networkmanager-tailscale-plasma wurde gegen die vorherige plasma-nm-Version gebaut. Neu bauen (make pkg) und mit pacman -U installieren, sonst kann der Plasma-Einstellungs-Dialog ausfallen (das Netzwerk-Applet funktioniert weiter)."
+Exec = /usr/bin/echo "==> networkmanager-tailscale-plasma was built against the previous plasma-nm version. Rebuild it (make pkg) and install it with pacman -U, otherwise the Plasma settings dialog may fail to load (the network applet keeps working)."

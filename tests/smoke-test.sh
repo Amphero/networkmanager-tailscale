@@ -1,8 +1,8 @@
 #!/bin/sh
-# D-Bus-Smoke-Test für den VPN-Service-Daemon, läuft im Container ohne
-# echten tailscaled: privater Session-Bus als "System"-Bus, Python-Mock
-# als LocalAPI. Prüft Namensregistrierung, Connect (inkl. Auth-Key-Login,
-# Config/Ip4Config-Signale) und Disconnect.
+# D-Bus smoke test for the VPN service daemon. Runs in the container
+# without a real tailscaled: a private session bus stands in for the
+# system bus, a Python mock for the LocalAPI. Checks name registration,
+# connect (auth key login, Config/Ip4Config signals) and disconnect.
 set -eu
 
 if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
@@ -28,19 +28,19 @@ DEST=org.freedesktop.NetworkManager.tailscale
 OBJ=/org/freedesktop/NetworkManager/VPN/Plugin
 IFACE=org.freedesktop.NetworkManager.VPN.Plugin
 
-echo "1/6 D-Bus-Name und Interface vorhanden"
+echo "1/6 D-Bus name and interface present"
 gdbus introspect --system --dest "$DEST" --object-path "$OBJ" | grep -q "$IFACE"
 
 gdbus monitor --system --dest "$DEST" > "$TMP/signals.log" 2>/dev/null &
 MON=$!
 sleep 1
 
-echo "2/6 Connect (mit Auth-Key, tailscaled ausgeloggt)"
+echo "2/6 Connect (with auth key, tailscaled logged out)"
 gdbus call --system --dest "$DEST" --object-path "$OBJ" --method "$IFACE.Connect" \
     "{'connection': {'id': <'Tailscale'>, 'uuid': <'52b3ad95-6a3f-4a62-9df8-4d0a9d07b5a2'>, 'type': <'vpn'>}, 'vpn': {'service-type': <'org.freedesktop.NetworkManager.tailscale'>, 'data': <@a{ss} {'accept-dns': 'no', 'accept-routes': 'yes', 'exit-node': '100.100.100.100'}>, 'secrets': <@a{ss} {'auth-key': 'tskey-test-123'}>}}" \
     > /dev/null
 
-echo "3/6 warte auf Config/Ip4Config-Signale"
+echo "3/6 waiting for Config/Ip4Config signals"
 ok=0
 i=0
 while [ $i -lt 30 ]; do
@@ -48,18 +48,18 @@ while [ $i -lt 30 ]; do
     i=$((i + 1))
     sleep 0.5
 done
-[ "$ok" = 1 ] || { echo "FEHLER: kein Ip4Config-Signal"; cat "$TMP/signals.log" "$LOG"; exit 1; }
+[ "$ok" = 1 ] || { echo "FAIL: no Ip4Config signal"; cat "$TMP/signals.log" "$LOG"; exit 1; }
 grep -q "tailscale0" "$TMP/signals.log"
 grep -q "'gateway'" "$TMP/signals.log"
 
-echo "4/6 Auth-Key, WantRunning, DNS/Routen und Exit-Node kamen bei der LocalAPI an"
+echo "4/6 auth key, WantRunning, DNS/routes and exit node reached the LocalAPI"
 grep -qF '"AuthKey":"tskey-test-123"' "$LOG"
 grep -qF '"WantRunning":true' "$LOG"
 grep -qF '"CorpDNS":false,"CorpDNSSet":true' "$LOG"
 grep -qF '"RouteAll":true,"RouteAllSet":true' "$LOG"
 grep -qF '"ExitNodeIP":"100.100.100.100","ExitNodeIPSet":true' "$LOG"
 
-echo "5/6 externes 'tailscale down' wird erkannt (Status-Sync)"
+echo "5/6 external 'tailscale down' is noticed (status sync)"
 curl -s --unix-socket "$NM_TAILSCALE_SOCKET" -X PATCH \
     -d '{"WantRunning":false}' http://local-tailscaled.sock/localapi/v0/prefs > /dev/null
 ok=0
@@ -69,8 +69,8 @@ while [ $i -lt 30 ]; do
     i=$((i + 1))
     sleep 1
 done
-[ "$ok" = 1 ] || { echo "FEHLER: Daemon hat externes down nicht erkannt"; cat "$TMP/signals.log" "$LOG"; exit 1; }
+[ "$ok" = 1 ] || { echo "FAIL: daemon did not notice the external down"; cat "$TMP/signals.log" "$LOG"; exit 1; }
 
-echo "6/6 Daemon hat die Verbindung sauber beendet (StateChanged -> STOPPED)"
+echo "6/6 daemon closed the connection cleanly (StateChanged -> STOPPED)"
 
-echo "SMOKE-TEST BESTANDEN"
+echo "SMOKE TEST PASSED"
