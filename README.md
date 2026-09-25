@@ -108,7 +108,7 @@ nmcli:
 
 ```sh
 nmcli connection add type vpn con-name Tailscale vpn-type tailscale
-nmcli connection modify Tailscale vpn.secrets "auth-key=tskey-auth-…"   # optional
+nmcli connection modify Tailscale vpn.secrets "auth-key=<auth-key>"     # optional
 nmcli connection modify Tailscale +vpn.data "accept-dns=no"             # optional
 nmcli connection modify Tailscale +vpn.data "accept-routes=yes"         # optional
 nmcli connection modify Tailscale +vpn.data "exit-node=100.x.y.z"       # optional

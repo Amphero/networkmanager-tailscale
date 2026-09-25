@@ -27,7 +27,7 @@
 #define POLL_INTERVAL_MS     500
 #define CONNECT_TIMEOUT_MS   (90 * 1000)
 /* how long a submitted auth key may sit in NeedsLogin before we call it
- * rejected — accepting one normally takes tailscaled a few seconds */
+ * rejected. Accepting one normally takes tailscaled a few seconds */
 #define AUTH_KEY_GRACE_MS    (15 * 1000)
 #define MONITOR_INTERVAL_MS  5000
 /* a minute of transport failures before giving up: a plain tailscaled
@@ -75,7 +75,7 @@ json_quote (const char *s)
 }
 
 /* @out_auth_url non-empty means tailscale demands (re-)authentication, and
- * @out_online only turns TRUE once the control server accepted the node —
+ * @out_online only turns TRUE once the control server accepted the node.
  * BackendState alone can claim "Running" from cached state */
 static gboolean
 parse_status (const char *json, char **out_state, char **out_ip4, char **out_ip6,

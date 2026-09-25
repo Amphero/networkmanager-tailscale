@@ -1,5 +1,5 @@
 #!/bin/sh
-# D-Bus-Smoke-Test für den VPN-Service-Daemon — läuft im Container ohne
+# D-Bus-Smoke-Test für den VPN-Service-Daemon, läuft im Container ohne
 # echten tailscaled: privater Session-Bus als "System"-Bus, Python-Mock
 # als LocalAPI. Prüft Namensregistrierung, Connect (inkl. Auth-Key-Login,
 # Config/Ip4Config-Signale) und Disconnect.

@@ -4,7 +4,7 @@
  *
  * Built against the private plasma-nm headers of the exact installed
  * version (see reference/plasma-nm) and linked against the installed
- * libplasmanm_editor.so — rebuild after plasma-nm updates. If it ever
+ * libplasmanm_editor.so. Rebuild after plasma-nm updates. If it ever
  * fails to load, the plasma applet keeps working: the activation check
  * only reads the embedded metadata (see stub.cpp fallback).
  */
@@ -274,7 +274,7 @@ private:
         m_loginButton->setEnabled(false);
 
         /* the login only completes while tailscaled talks to the control
-         * server, which it does not do while stopped — wake it up for the
+         * server, which it does not do while stopped, so wake it up for the
          * duration of the login. A failed prefs read must not count as
          * "was down", so only restore what was actually read. */
         localapiCallAsync(this, "GET", "/localapi/v0/prefs", QByteArray(), [this](const QByteArray &resp, long code) {
@@ -295,7 +295,7 @@ private:
     {
         localapiCallAsync(this, "POST", "/localapi/v0/login-interactive", QByteArray(""), [this](const QByteArray &, long code) {
             if (code == 0) {
-                finishLogin(QStringLiteral("tailscaled is not reachable — is tailscale installed and tailscaled.service running?"));
+                finishLogin(QStringLiteral("tailscaled is not reachable. Is tailscale installed and tailscaled.service running?"));
                 return;
             }
             if (code == 403 && !m_operatorTried) {
@@ -351,14 +351,14 @@ private:
             const bool online = status.value(QLatin1String("Self")).toObject().value(QLatin1String("Online")).toBool(false);
 
             /* a pending AuthURL means the login is not done, no matter what
-             * BackendState claims from cached state — and right after the login
+             * BackendState claims from cached state. Right after the login
              * request the AuthURL may not be filled in yet, so "Running" only
              * counts once the control server accepted the node (Online) */
             if (authUrl.isEmpty()
                 && ((state == QLatin1String("Running") && online)
                     || (state == QLatin1String("Stopped") && m_polls >= 3))) {
                 m_pollTimer->stop();
-                finishLogin(QStringLiteral("Device is registered — you can connect now."));
+                finishLogin(QStringLiteral("Device is registered, you can connect now."));
                 return;
             }
             if (!authUrl.isEmpty() && !m_urlOpened) {

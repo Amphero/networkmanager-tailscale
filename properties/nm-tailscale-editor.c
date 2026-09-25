@@ -367,13 +367,13 @@ login_status_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 	parse_login_state (resp, &state, &auth_url, &online);
 
 	/* a pending AuthURL means the login is not done, no matter what
-	 * BackendState claims from cached state — and right after the login
+	 * BackendState claims from cached state. Right after the login
 	 * request the AuthURL may not be filled in yet, so "Running" only
 	 * counts once the control server accepted the node (Online) */
 	if (   !(auth_url && auth_url[0])
 	    && (   (g_strcmp0 (state, "Running") == 0 && online)
 	        || (g_strcmp0 (state, "Stopped") == 0 && self->login_polls >= 3))) {
-		login_finish (self, "Device is registered — you can connect now.");
+		login_finish (self, "Device is registered, you can connect now.");
 		goto out;
 	}
 	if (auth_url && auth_url[0] && !self->url_opened) {
@@ -498,7 +498,7 @@ login_wake_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 	if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) || !self->widget)
 		goto out;
 	/* even if waking tailscaled failed the login attempt itself may
-	 * still work — let it produce the error message */
+	 * still work, let it produce the error message */
 	request_login (self);
 out:
 	g_object_unref (self);
@@ -528,7 +528,7 @@ login_prefs_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 	self->restore_down = read_ok && !want_running;
 
 	/* the login only completes while tailscaled talks to the control
-	 * server, which it does not do while stopped — wake it up for the
+	 * server, which it does not do while stopped, so wake it up for the
 	 * duration of the login */
 	if (self->restore_down)
 		nm_tailscale_localapi_call_async ("PATCH", "/localapi/v0/prefs",
