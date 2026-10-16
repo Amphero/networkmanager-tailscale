@@ -14,7 +14,7 @@ makedepends=(gcc make pkgconf glib2-devel libnm gtk4 json-glib curl qt6-base
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
         "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz"
         networkmanager-tailscale-plasma.hook)
-sha256sums=('28c502ac3c013f2b27ca499b51692cf4edb8fdc070937ddd607fa0ecfee01315'
+sha256sums=('9a882561762ffb60aaabd27739d738a8b2e10a7f8f3a53a695f768a44e9961d4'
             'fc6e13f7741f146be90f9fab22118b445199ef06858e81cfdd1926517adfb2cf'
             '69e523bae84d0c04debcc25d345ae0c52d478072ba39fdbb76f59d390ccaf6d5')
 
