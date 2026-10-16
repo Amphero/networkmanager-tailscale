@@ -1,8 +1,8 @@
 # Maintainer: Amphero <301399868+Amphero@users.noreply.github.com>
 pkgbase=networkmanager-tailscale
 pkgname=(networkmanager-tailscale networkmanager-tailscale-plasma)
-pkgver=0.1.3
-pkgrel=2
+pkgver=0.1.4
+pkgrel=1
 _plasmanm_ver=6.8.0
 pkgdesc="NetworkManager VPN plugin for Tailscale"
 arch=(x86_64)
