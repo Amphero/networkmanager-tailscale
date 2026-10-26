@@ -1,8 +1,8 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
-# tailscaled remembers WantRunning and comes back up by itself (crash,
-# NM restart), while NM still shows the VPN as down. Bring the NM
-# connection up then. Runs on every "up" since tailscale0 and the base
+# tailscaled remembers WantRunning and comes back up by itself (power
+# loss, tailscaled crash), while NM still shows the VPN as down. Bring
+# the NM connection up then. Runs on every "up" since tailscale0 and the base
 # connection come up in any order and the VPN needs a default route.
 
 [ "$2" = up ] || exit 0
