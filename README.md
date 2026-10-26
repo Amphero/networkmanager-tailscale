@@ -19,8 +19,9 @@ What you get:
 - Running `tailscale down` or logging out outside of NM also disconnects
   the NM connection
 - After a reboot tailscale stays down until you connect through NM. If
-  tailscaled comes up on its own anyway (crash, NM restart), the NM
-  connection is brought up too, so the applet shows it
+  tailscaled still comes up on its own (power loss, tailscaled crash),
+  the NM connection is brought up as soon as a network is connected, so
+  the applet shows it
 
 Code layout: `src/` has the VPN service daemon (C, libnm), `properties/`
 the connection editor (libnm core plus a GTK4 UI), `plasma/` the plasma-nm
