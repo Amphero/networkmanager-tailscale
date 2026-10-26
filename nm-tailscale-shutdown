@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# ExecStop for tailscaled. tailscaled stops before NM on shutdown, so the
+# VPN service can't take tailscale down anymore and it would come back up
+# on the next boot. Do it here, but only on shutdown and only when the NM
+# connection is up.
+
+[ "$(systemctl is-system-running)" = stopping ] || exit 0
+pgrep -xf /usr/lib/NetworkManager/nm-tailscale-service > /dev/null || exit 0
+exec tailscale down

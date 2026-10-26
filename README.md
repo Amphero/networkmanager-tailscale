@@ -18,6 +18,9 @@ What you get:
   out with whatever tailscaled is currently set to
 - Running `tailscale down` or logging out outside of NM also disconnects
   the NM connection
+- After a reboot tailscale stays down until you connect through NM. If
+  tailscaled comes up on its own anyway (crash, NM restart), the NM
+  connection is brought up too, so the applet shows it
 
 Code layout: `src/` has the VPN service daemon (C, libnm), `properties/`
 the connection editor (libnm core plus a GTK4 UI), `plasma/` the plasma-nm
@@ -81,9 +84,13 @@ sudo install -m755 dist/libnm-vpn-plugin-tailscale.so              /usr/lib/Netw
 sudo install -m755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so  /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so
 sudo install -Dm644 dist/nm-tailscale-service.name                 /usr/lib/NetworkManager/VPN/nm-tailscale-service.name
 sudo install -m644 dist/nm-tailscale-service.conf                  /usr/share/dbus-1/system.d/nm-tailscale-service.conf
+sudo install -m755 dist/nm-tailscale-dispatcher                    /usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale
+sudo install -m755 dist/nm-tailscale-shutdown                      /usr/lib/NetworkManager/nm-tailscale-shutdown
+sudo install -Dm644 dist/tailscaled-nm-tailscale.conf              /usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf
 # KDE Plasma only:
 sudo install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so    /usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
 
+sudo systemctl daemon-reload
 sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
 ```
@@ -143,7 +150,11 @@ sudo rm -f /usr/lib/NetworkManager/nm-tailscale-service \
            /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so \
            /usr/lib/NetworkManager/VPN/nm-tailscale-service.name \
            /usr/share/dbus-1/system.d/nm-tailscale-service.conf \
+           /usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale \
+           /usr/lib/NetworkManager/nm-tailscale-shutdown \
+           /usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf \
            /usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
+sudo systemctl daemon-reload
 sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
 ```

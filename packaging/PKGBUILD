@@ -39,6 +39,9 @@ package_networkmanager-tailscale() {
 	install -Dm755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so"
 	install -Dm644 dist/nm-tailscale-service.name "$pkgdir/usr/lib/NetworkManager/VPN/nm-tailscale-service.name"
 	install -Dm644 dist/nm-tailscale-service.conf "$pkgdir/usr/share/dbus-1/system.d/nm-tailscale-service.conf"
+	install -Dm755 dist/nm-tailscale-dispatcher "$pkgdir/usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale"
+	install -Dm755 dist/nm-tailscale-shutdown "$pkgdir/usr/lib/NetworkManager/nm-tailscale-shutdown"
+	install -Dm644 dist/tailscaled-nm-tailscale.conf "$pkgdir/usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 

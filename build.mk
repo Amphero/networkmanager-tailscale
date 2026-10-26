@@ -15,7 +15,10 @@ all: $(DIST)/nm-tailscale-service \
      $(DIST)/plasmanetworkmanagement_tailscaleui.so \
      $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so \
      $(DIST)/nm-tailscale-service.name \
-     $(DIST)/nm-tailscale-service.conf
+     $(DIST)/nm-tailscale-service.conf \
+     $(DIST)/nm-tailscale-dispatcher \
+     $(DIST)/nm-tailscale-shutdown \
+     $(DIST)/tailscaled-nm-tailscale.conf
 
 $(DIST):
 	mkdir -p $@
@@ -65,6 +68,15 @@ $(DIST)/nm-tailscale-service.name: nm-tailscale-service.name | $(DIST)
 	cp $< $@
 
 $(DIST)/nm-tailscale-service.conf: nm-tailscale-service.conf | $(DIST)
+	cp $< $@
+
+$(DIST)/nm-tailscale-dispatcher: nm-tailscale-dispatcher | $(DIST)
+	cp $< $@
+
+$(DIST)/nm-tailscale-shutdown: nm-tailscale-shutdown | $(DIST)
+	cp $< $@
+
+$(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf | $(DIST)
 	cp $< $@
 
 check: all

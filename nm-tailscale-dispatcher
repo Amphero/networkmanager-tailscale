@@ -1,0 +1,32 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# tailscaled remembers WantRunning and comes back up by itself (crash,
+# NM restart), while NM still shows the VPN as down. Bring the NM
+# connection up then. Runs on every "up" since tailscale0 and the base
+# connection come up in any order and the VPN needs a default route.
+
+[ "$2" = up ] || exit 0
+[ -n "$(ip route show default)$(ip -6 route show default)" ] || exit 0
+
+SOCK=${NM_TAILSCALE_SOCKET:-/run/tailscale/tailscaled.sock}
+SERVICE=org.freedesktop.NetworkManager.tailscale
+
+tailscale_vpns() {
+	nmcli -t -f UUID,TYPE connection show "$@" | sed -n 's/:vpn$//p' |
+	while read -r uuid; do
+		[ "$(nmcli -g vpn.service-type connection show uuid "$uuid")" = "$SERVICE" ] && echo "$uuid"
+	done
+}
+
+# right after boot the LocalAPI may not answer yet
+prefs=
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+	prefs=$(curl -sf --max-time 2 --unix-socket "$SOCK" http://local-tailscaled.sock/localapi/v0/prefs) && break
+	sleep 1
+done
+printf '%s' "$prefs" | grep -q '"WantRunning": *true' || exit 0
+
+[ -n "$(tailscale_vpns --active)" ] && exit 0
+uuid=$(tailscale_vpns | head -n 1)
+[ -n "$uuid" ] || exit 0
+exec nmcli --wait 0 connection up uuid "$uuid"
