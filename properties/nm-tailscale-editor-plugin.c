@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Core editor plugin loaded by libnm/libnma from the .name file. Contains
- * no GTK code itself; get_editor() dlopens the GTK4 editor module next to
- * this library (the same split NetworkManager-openvpn uses).
+ * no GTK code itself; get_editor() dlopens the GTK3 or GTK4 editor module
+ * next to this library, matching the GTK version of the host (the same split
+ * NetworkManager-openvpn uses).
  */
 
 #define _GNU_SOURCE /* dladdr() */
@@ -14,6 +15,7 @@
 
 #define TAILSCALE_PLUGIN_NAME "Tailscale"
 #define TAILSCALE_PLUGIN_DESC "Connect this machine to your Tailscale network."
+#define GTK3_EDITOR_MODULE    "libnm-vpn-plugin-tailscale-editor.so"
 #define GTK4_EDITOR_MODULE    "libnm-gtk4-vpn-plugin-tailscale-editor.so"
 
 enum { PROP_0, PROP_NAME, PROP_DESC, PROP_SERVICE };
@@ -43,16 +45,11 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 	gpointer gtk3_symbol = NULL;
 	GModule *self_module;
 
-	/* a GTK3 host (nm-connection-editor) cannot load the GTK4 editor */
+	/* a GTK3 host (nm-connection-editor) cannot load the GTK4 editor
+	 * and vice versa */
 	self_module = g_module_open (NULL, 0);
 	g_module_symbol (self_module, "gtk_container_add", &gtk3_symbol);
 	g_module_close (self_module);
-	if (gtk3_symbol) {
-		g_set_error (error, NM_CONNECTION_ERROR, NM_CONNECTION_ERROR_FAILED,
-		             "the Tailscale plugin only ships a GTK4 editor; "
-		             "use GNOME Settings, Plasma System Settings or nmcli");
-		return NULL;
-	}
 
 	if (!factory) {
 		g_autofree char *dir = NULL;
@@ -66,7 +63,7 @@ get_editor (NMVpnEditorPlugin *iface, NMConnection *connection, GError **error)
 			return NULL;
 		}
 		dir = g_path_get_dirname (info.dli_fname);
-		path = g_build_filename (dir, GTK4_EDITOR_MODULE, NULL);
+		path = g_build_filename (dir, gtk3_symbol ? GTK3_EDITOR_MODULE : GTK4_EDITOR_MODULE, NULL);
 
 		/* stays loaded forever: the GTypes it registers cannot be unregistered */
 		module = dlopen (path, RTLD_LAZY | RTLD_LOCAL);

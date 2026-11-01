@@ -10,7 +10,8 @@ it.
 What you get:
 
 - Connect and disconnect from GNOME Settings, KDE Plasma (System Settings
-  and the network applet) or nmcli
+  and the network applet), nm-applet and nm-connection-editor (XFCE, MATE
+  and other desktops) or nmcli
 - Device registration with an auth key or through browser login. The auth
   key is stored as an NM secret. If your user is missing operator rights,
   polkit asks and grants them
@@ -24,10 +25,10 @@ What you get:
   the applet shows it
 
 Code layout: `src/` has the VPN service daemon (C, libnm), `properties/`
-the connection editor (libnm core plus a GTK4 UI), `plasma/` the plasma-nm
-plugin (Qt/C++) and a metadata stub as fallback, `shared/` common key
-definitions and the LocalAPI HTTP client, `tests/` a D-Bus smoke test
-against a mocked tailscaled.
+the connection editor (libnm core plus a UI built for GTK3 and GTK4),
+`plasma/` the plasma-nm plugin (Qt/C++) and a metadata stub as fallback,
+`shared/` common key definitions and the LocalAPI HTTP client, `tests/` a
+D-Bus smoke test against a mocked tailscaled.
 
 ## Building
 
@@ -82,6 +83,7 @@ You need `tailscale` installed and `tailscaled` running
 ```sh
 sudo install -m755 dist/nm-tailscale-service                       /usr/lib/NetworkManager/nm-tailscale-service
 sudo install -m755 dist/libnm-vpn-plugin-tailscale.so              /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so
+sudo install -m755 dist/libnm-vpn-plugin-tailscale-editor.so       /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale-editor.so
 sudo install -m755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so  /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so
 sudo install -Dm644 dist/nm-tailscale-service.name                 /usr/lib/NetworkManager/VPN/nm-tailscale-service.name
 sudo install -m644 dist/nm-tailscale-service.conf                  /usr/share/dbus-1/system.d/nm-tailscale-service.conf
@@ -111,6 +113,9 @@ GNOME: Settings -> Network -> VPN -> "+" -> Tailscale.
 
 KDE Plasma: System Settings -> Network -> Connections -> "+" -> VPN ->
 Tailscale. Toggle via the network applet.
+
+XFCE, MATE and other desktops with nm-applet: Network Connections
+(nm-connection-editor) -> "+" -> Tailscale. Toggle via nm-applet.
 
 nmcli:
 
@@ -148,6 +153,7 @@ networkmanager-tailscale`. Manual installs:
 nmcli connection delete Tailscale
 sudo rm -f /usr/lib/NetworkManager/nm-tailscale-service \
            /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so \
+           /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale-editor.so \
            /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so \
            /usr/lib/NetworkManager/VPN/nm-tailscale-service.name \
            /usr/share/dbus-1/system.d/nm-tailscale-service.conf \
