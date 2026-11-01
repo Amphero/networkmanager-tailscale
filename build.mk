@@ -32,9 +32,9 @@ $(DIST)/libnm-vpn-plugin-tailscale.so: properties/nm-tailscale-editor-plugin.c s
 	    -Wl,--version-script=properties/libnm-vpn-plugin-tailscale.ver \
 	    $$(pkg-config --cflags --libs $(PKG_PLUGIN)) -ldl
 
-$(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/libnm-gtk4-vpn-plugin-tailscale-editor.ver | $(DIST)
+$(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ properties/nm-tailscale-editor.c $(LOCALAPI) \
-	    -Wl,--version-script=properties/libnm-gtk4-vpn-plugin-tailscale-editor.ver \
+	    -Wl,--version-script=properties/nm-tailscale-editor.ver \
 	    $$(pkg-config --cflags --libs $(PKG_EDITOR))
 
 # Native plasma-nm plugin: built against the private headers of the exact
