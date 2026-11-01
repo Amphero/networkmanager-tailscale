@@ -3,7 +3,7 @@ pkgbase=networkmanager-tailscale
 pkgname=(networkmanager-tailscale networkmanager-tailscale-plasma)
 pkgver=0.1.5
 pkgrel=1
-_plasmanm_ver=6.8.1
+_plasmanm_ver=6.8.2
 pkgdesc="NetworkManager VPN plugin for Tailscale"
 arch=(x86_64)
 url="https://github.com/Amphero/networkmanager-tailscale"
@@ -15,7 +15,7 @@ source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
         "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz"
         networkmanager-tailscale-plasma.hook)
 sha256sums=('bb292bfe5a2c3a5e3d90921248864db1480c22072b759da3112244b74ed61041'
-            'aefce61fbea10a5cfa2401d89d504351fccd8978c79c3b9d331c72ee063095c7'
+            '10553099455981033f50cdab7ea40c50067486eff438b5aca94e451ec166b7cd'
             '69e523bae84d0c04debcc25d345ae0c52d478072ba39fdbb76f59d390ccaf6d5')
 
 prepare() {
