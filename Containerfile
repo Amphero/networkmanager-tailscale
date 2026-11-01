@@ -4,7 +4,7 @@ FROM docker.io/library/archlinux:latest
 
 RUN pacman -Syu --noconfirm --needed \
         gcc make pkgconf glib2 glib2-devel \
-        libnm gtk4 json-glib curl qt6-base \
+        libnm gtk3 gtk4 json-glib curl qt6-base \
         plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt \
         dbus python \
         base-devel networkmanager tailscale \

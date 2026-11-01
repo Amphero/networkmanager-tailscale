@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- * GTK4 editor widget shown in the GNOME Settings VPN dialog: optional auth
- * key (stored as an NM secret), browser login, exit node selection (populated
- * live from tailscaled's LocalAPI) and the accept-dns/accept-routes switches.
+ * Editor widget shown in the VPN dialog of GNOME Settings (GTK4) and
+ * nm-connection-editor (GTK3): optional auth key (stored as an NM secret),
+ * browser login, exit node selection (populated live from tailscaled's
+ * LocalAPI) and the accept-dns/accept-routes switches. The same source
+ * builds both editor modules, the GTK differences are in the helpers below.
  */
 
 #include <string.h>
@@ -19,7 +21,9 @@ typedef struct {
 	GtkWidget *widget;
 	GtkWidget *entry;
 	GtkWidget *exit_combo;
+#if GTK_CHECK_VERSION (4, 0, 0)
 	GtkStringList *exit_labels;
+#endif
 	GPtrArray *exit_ips; /* parallel to the combo entries; [0] = "" (none) */
 	GPtrArray *exit_ids; /* stable node IDs, parallel to exit_ips */
 	GtkWidget *dns_check;
@@ -54,44 +58,74 @@ G_DEFINE_TYPE_EXTENDED (TailscaleEditor, tailscale_editor, G_TYPE_OBJECT, 0,
 static void
 combo_append (TailscaleEditor *self, const char *label)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	gtk_string_list_append (self->exit_labels, label);
+#else
+	gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (self->exit_combo), label);
+#endif
 }
 
 /* index of the selected exit node entry; G_MAXUINT when none is selected */
 static guint
 combo_get_selected (TailscaleEditor *self)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	return gtk_drop_down_get_selected (GTK_DROP_DOWN (self->exit_combo));
+#else
+	int idx = gtk_combo_box_get_active (GTK_COMBO_BOX (self->exit_combo));
+
+	return idx < 0 ? G_MAXUINT : (guint) idx;
+#endif
 }
 
 static void
 combo_set_selected (TailscaleEditor *self, guint idx)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	gtk_drop_down_set_selected (GTK_DROP_DOWN (self->exit_combo), idx);
+#else
+	gtk_combo_box_set_active (GTK_COMBO_BOX (self->exit_combo), (int) idx);
+#endif
 }
 
 static const char *
 entry_get_text (GtkWidget *entry)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	return gtk_editable_get_text (GTK_EDITABLE (entry));
+#else
+	return gtk_entry_get_text (GTK_ENTRY (entry));
+#endif
 }
 
 static void
 entry_set_text (GtkWidget *entry, const char *text)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	gtk_editable_set_text (GTK_EDITABLE (entry), text);
+#else
+	gtk_entry_set_text (GTK_ENTRY (entry), text);
+#endif
 }
 
 static gboolean
 check_get_active (GtkWidget *check)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	return gtk_check_button_get_active (GTK_CHECK_BUTTON (check));
+#else
+	return gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (check));
+#endif
 }
 
 static void
 check_set_active (GtkWidget *check, gboolean active)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	gtk_check_button_set_active (GTK_CHECK_BUTTON (check), active);
+#else
+	gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (check), active);
+#endif
 }
 
 static GtkWidget *
@@ -99,8 +133,13 @@ dim_label_new (const char *text)
 {
 	GtkWidget *label = gtk_label_new (text);
 
+#if GTK_CHECK_VERSION (4, 0, 0)
 	gtk_widget_add_css_class (label, "dim-label");
 	gtk_label_set_wrap (GTK_LABEL (label), TRUE);
+#else
+	gtk_style_context_add_class (gtk_widget_get_style_context (label), "dim-label");
+	gtk_label_set_line_wrap (GTK_LABEL (label), TRUE);
+#endif
 	gtk_label_set_xalign (GTK_LABEL (label), 0.0);
 	return label;
 }
@@ -108,10 +147,14 @@ dim_label_new (const char *text)
 static void
 open_uri (const char *uri)
 {
+#if GTK_CHECK_VERSION (4, 0, 0)
 	GtkUriLauncher *launcher = gtk_uri_launcher_new (uri);
 
 	gtk_uri_launcher_launch (launcher, NULL, NULL, NULL, NULL);
 	g_object_unref (launcher);
+#else
+	gtk_show_uri_on_window (NULL, uri, GDK_CURRENT_TIME, NULL);
+#endif
 }
 
 /*****************************************************************************/
@@ -685,11 +728,15 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 	label = gtk_label_new_with_mnemonic ("Auth _key");
 	gtk_widget_set_halign (label, GTK_ALIGN_START);
 
+#if GTK_CHECK_VERSION (4, 0, 0)
 	self->entry = gtk_password_entry_new ();
-	g_object_set (self->entry,
-	              "show-peek-icon", TRUE,
-	              "placeholder-text", "tskey-auth-…",
-	              NULL);
+	g_object_set (self->entry, "show-peek-icon", TRUE, NULL);
+#else
+	self->entry = gtk_entry_new ();
+	gtk_entry_set_visibility (GTK_ENTRY (self->entry), FALSE);
+	gtk_entry_set_input_purpose (GTK_ENTRY (self->entry), GTK_INPUT_PURPOSE_PASSWORD);
+#endif
+	g_object_set (self->entry, "placeholder-text", "tskey-auth-…", NULL);
 	gtk_widget_set_hexpand (self->entry, TRUE);
 	gtk_label_set_mnemonic_widget (GTK_LABEL (label), self->entry);
 
@@ -700,10 +747,16 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 	exit_label = gtk_label_new_with_mnemonic ("E_xit node");
 	gtk_widget_set_halign (exit_label, GTK_ALIGN_START);
 
+#if GTK_CHECK_VERSION (4, 0, 0)
 	self->exit_labels = gtk_string_list_new (NULL);
 	/* the dropdown takes ownership of the list model */
 	self->exit_combo = gtk_drop_down_new (G_LIST_MODEL (self->exit_labels), NULL);
+#else
+	self->exit_combo = gtk_combo_box_text_new ();
+#endif
 	combo_append (self, "None");
+	/* select "None", a GTK3 combo box starts without a selection */
+	combo_set_selected (self, 0);
 	self->exit_ips = g_ptr_array_new_with_free_func (g_free);
 	self->exit_ids = g_ptr_array_new_with_free_func (g_free);
 	g_ptr_array_add (self->exit_ips, g_strdup (""));
@@ -727,6 +780,9 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 	gtk_grid_attach (GTK_GRID (grid), self->routes_check, 0, 5, 2, 1);
 	gtk_grid_attach (GTK_GRID (grid), hint, 0, 6, 2, 1);
 
+#if !GTK_CHECK_VERSION (4, 0, 0)
+	gtk_widget_show_all (grid);
+#endif
 	self->widget = g_object_ref_sink (grid);
 
 	s_vpn = nm_connection_get_setting_vpn (connection);
@@ -767,7 +823,11 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 
 	g_signal_connect_swapped (self->entry, "changed", G_CALLBACK (changed_cb), self);
 	g_signal_connect (self->login_button, "clicked", G_CALLBACK (login_clicked_cb), self);
+#if GTK_CHECK_VERSION (4, 0, 0)
 	g_signal_connect_swapped (self->exit_combo, "notify::selected", G_CALLBACK (changed_cb), self);
+#else
+	g_signal_connect_swapped (self->exit_combo, "changed", G_CALLBACK (changed_cb), self);
+#endif
 	g_signal_connect_swapped (self->dns_check, "toggled", G_CALLBACK (changed_cb), self);
 	g_signal_connect_swapped (self->routes_check, "toggled", G_CALLBACK (changed_cb), self);
 

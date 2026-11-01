@@ -3,14 +3,16 @@ CC     ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 DIST   := dist
 
-PKG_SERVICE := libnm libcurl json-glib-1.0
-PKG_PLUGIN  := libnm gmodule-2.0
-PKG_EDITOR  := libnm gtk4 gmodule-2.0 libcurl json-glib-1.0
+PKG_SERVICE     := libnm libcurl json-glib-1.0
+PKG_PLUGIN      := libnm gmodule-2.0
+PKG_EDITOR      := libnm gtk+-3.0 gmodule-2.0 libcurl json-glib-1.0
+PKG_EDITOR_GTK4 := libnm gtk4 gmodule-2.0 libcurl json-glib-1.0
 
 LOCALAPI := shared/nm-tailscale-localapi.c
 
 all: $(DIST)/nm-tailscale-service \
      $(DIST)/libnm-vpn-plugin-tailscale.so \
+     $(DIST)/libnm-vpn-plugin-tailscale-editor.so \
      $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so \
      $(DIST)/plasmanetworkmanagement_tailscaleui.so \
      $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so \
@@ -32,10 +34,17 @@ $(DIST)/libnm-vpn-plugin-tailscale.so: properties/nm-tailscale-editor-plugin.c s
 	    -Wl,--version-script=properties/libnm-vpn-plugin-tailscale.ver \
 	    $$(pkg-config --cflags --libs $(PKG_PLUGIN)) -ldl
 
-$(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
+# Editor module for GTK3 hosts (nm-connection-editor)
+$(DIST)/libnm-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ properties/nm-tailscale-editor.c $(LOCALAPI) \
 	    -Wl,--version-script=properties/nm-tailscale-editor.ver \
 	    $$(pkg-config --cflags --libs $(PKG_EDITOR))
+
+# The same editor source as above, built for GTK4 hosts (GNOME Settings)
+$(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
+	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ properties/nm-tailscale-editor.c $(LOCALAPI) \
+	    -Wl,--version-script=properties/nm-tailscale-editor.ver \
+	    $$(pkg-config --cflags --libs $(PKG_EDITOR_GTK4))
 
 # Native plasma-nm plugin: built against the private headers of the exact
 # installed plasma-nm version (reference/plasma-nm, the tag has to match the
