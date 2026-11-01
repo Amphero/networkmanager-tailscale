@@ -9,7 +9,7 @@ arch=(x86_64)
 url="https://github.com/Amphero/networkmanager-tailscale"
 license=(GPL-2.0-or-later)
 options=(!debug)
-makedepends=(gcc make pkgconf glib2-devel libnm gtk4 json-glib curl qt6-base
+makedepends=(gcc make pkgconf glib2-devel libnm gtk3 gtk4 json-glib curl qt6-base
              plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt)
 source=("$pkgbase-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
         "plasma-nm-v$_plasmanm_ver.tar.gz::https://invent.kde.org/plasma/plasma-nm/-/archive/v$_plasmanm_ver/plasma-nm-v$_plasmanm_ver.tar.gz"
@@ -30,12 +30,13 @@ build() {
 }
 
 package_networkmanager-tailscale() {
-	pkgdesc+=" (service daemon and GTK4 editor)"
-	depends=(networkmanager libnm curl json-glib gtk4 tailscale)
+	pkgdesc+=" (service daemon and GTK editors)"
+	depends=(networkmanager libnm curl json-glib gtk3 gtk4 tailscale)
 
 	cd "$pkgbase-$pkgver"
 	install -Dm755 dist/nm-tailscale-service "$pkgdir/usr/lib/NetworkManager/nm-tailscale-service"
 	install -Dm755 dist/libnm-vpn-plugin-tailscale.so "$pkgdir/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so"
+	install -Dm755 dist/libnm-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale-editor.so"
 	install -Dm755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so"
 	install -Dm644 dist/nm-tailscale-service.name "$pkgdir/usr/lib/NetworkManager/VPN/nm-tailscale-service.name"
 	install -Dm644 dist/nm-tailscale-service.conf "$pkgdir/usr/share/dbus-1/system.d/nm-tailscale-service.conf"
