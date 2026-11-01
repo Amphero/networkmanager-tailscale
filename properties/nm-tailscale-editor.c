@@ -57,6 +57,63 @@ combo_append (TailscaleEditor *self, const char *label)
 	gtk_string_list_append (self->exit_labels, label);
 }
 
+/* index of the selected exit node entry; G_MAXUINT when none is selected */
+static guint
+combo_get_selected (TailscaleEditor *self)
+{
+	return gtk_drop_down_get_selected (GTK_DROP_DOWN (self->exit_combo));
+}
+
+static void
+combo_set_selected (TailscaleEditor *self, guint idx)
+{
+	gtk_drop_down_set_selected (GTK_DROP_DOWN (self->exit_combo), idx);
+}
+
+static const char *
+entry_get_text (GtkWidget *entry)
+{
+	return gtk_editable_get_text (GTK_EDITABLE (entry));
+}
+
+static void
+entry_set_text (GtkWidget *entry, const char *text)
+{
+	gtk_editable_set_text (GTK_EDITABLE (entry), text);
+}
+
+static gboolean
+check_get_active (GtkWidget *check)
+{
+	return gtk_check_button_get_active (GTK_CHECK_BUTTON (check));
+}
+
+static void
+check_set_active (GtkWidget *check, gboolean active)
+{
+	gtk_check_button_set_active (GTK_CHECK_BUTTON (check), active);
+}
+
+static GtkWidget *
+dim_label_new (const char *text)
+{
+	GtkWidget *label = gtk_label_new (text);
+
+	gtk_widget_add_css_class (label, "dim-label");
+	gtk_label_set_wrap (GTK_LABEL (label), TRUE);
+	gtk_label_set_xalign (GTK_LABEL (label), 0.0);
+	return label;
+}
+
+static void
+open_uri (const char *uri)
+{
+	GtkUriLauncher *launcher = gtk_uri_launcher_new (uri);
+
+	gtk_uri_launcher_launch (launcher, NULL, NULL, NULL, NULL);
+	g_object_unref (launcher);
+}
+
 /*****************************************************************************/
 
 static GObject *
@@ -70,14 +127,14 @@ update_connection (NMVpnEditor *editor, NMConnection *connection, GError **error
 {
 	TailscaleEditor *self = TAILSCALE_EDITOR (editor);
 	NMSettingVpn *s_vpn = NM_SETTING_VPN (nm_setting_vpn_new ());
-	const char *key = gtk_editable_get_text (GTK_EDITABLE (self->entry));
-	guint sel = gtk_drop_down_get_selected (GTK_DROP_DOWN (self->exit_combo));
+	const char *key = entry_get_text (self->entry);
+	guint sel = combo_get_selected (self);
 
 	g_object_set (s_vpn, NM_SETTING_VPN_SERVICE_TYPE, NM_DBUS_SERVICE_TAILSCALE, NULL);
 	nm_setting_vpn_add_data_item (s_vpn, NM_TAILSCALE_KEY_ACCEPT_DNS,
-	                              gtk_check_button_get_active (GTK_CHECK_BUTTON (self->dns_check)) ? "yes" : "no");
+	                              check_get_active (self->dns_check) ? "yes" : "no");
 	nm_setting_vpn_add_data_item (s_vpn, NM_TAILSCALE_KEY_ACCEPT_ROUTES,
-	                              gtk_check_button_get_active (GTK_CHECK_BUTTON (self->routes_check)) ? "yes" : "no");
+	                              check_get_active (self->routes_check) ? "yes" : "no");
 	if (sel < self->exit_ips->len) {
 		const char *ip = g_ptr_array_index (self->exit_ips, sel);
 
@@ -178,7 +235,7 @@ select_exit_ip (TailscaleEditor *self, const char *ip)
 		g_ptr_array_add (self->exit_ids, g_strdup (""));
 		idx = self->exit_ips->len - 1;
 	}
-	gtk_drop_down_set_selected (GTK_DROP_DOWN (self->exit_combo), idx);
+	combo_set_selected (self, idx);
 }
 
 /* programmatic updates from LocalAPI replies must not look like user
@@ -221,10 +278,10 @@ prefill_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 	root = json_node_get_object (node);
 
 	block_change_signals (self, TRUE);
-	gtk_check_button_set_active (GTK_CHECK_BUTTON (self->dns_check),
-	                             json_object_get_boolean_member_with_default (root, "CorpDNS", TRUE));
-	gtk_check_button_set_active (GTK_CHECK_BUTTON (self->routes_check),
-	                             json_object_get_boolean_member_with_default (root, "RouteAll", FALSE));
+	check_set_active (self->dns_check,
+	                  json_object_get_boolean_member_with_default (root, "CorpDNS", TRUE));
+	check_set_active (self->routes_check,
+	                  json_object_get_boolean_member_with_default (root, "RouteAll", FALSE));
 	exit_ip = json_object_get_string_member_with_default (root, "ExitNodeIP", "");
 	exit_id = json_object_get_string_member_with_default (root, "ExitNodeID", "");
 	if (exit_ip[0]) {
@@ -235,7 +292,7 @@ prefill_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 
 		for (i = 1; i < self->exit_ids->len; i++) {
 			if (g_strcmp0 (g_ptr_array_index (self->exit_ids, i), exit_id) == 0) {
-				gtk_drop_down_set_selected (GTK_DROP_DOWN (self->exit_combo), i);
+				combo_set_selected (self, i);
 				break;
 			}
 		}
@@ -377,11 +434,8 @@ login_status_cb (GObject *source, GAsyncResult *result, gpointer user_data)
 		goto out;
 	}
 	if (auth_url && auth_url[0] && !self->url_opened) {
-		GtkUriLauncher *launcher = gtk_uri_launcher_new (auth_url);
-
 		self->url_opened = TRUE;
-		gtk_uri_launcher_launch (launcher, NULL, NULL, NULL, NULL);
-		g_object_unref (launcher);
+		open_uri (auth_url);
 		gtk_label_set_text (GTK_LABEL (self->login_status),
 		                    "Complete the login in your browser and keep this dialog "
 		                    "open until it confirms the registration…");
@@ -641,10 +695,7 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 
 	self->login_button = gtk_button_new_with_mnemonic ("Log in via _browser instead…");
 	gtk_widget_set_halign (self->login_button, GTK_ALIGN_START);
-	self->login_status = gtk_label_new ("");
-	gtk_widget_add_css_class (self->login_status, "dim-label");
-	gtk_label_set_wrap (GTK_LABEL (self->login_status), TRUE);
-	gtk_label_set_xalign (GTK_LABEL (self->login_status), 0.0);
+	self->login_status = dim_label_new ("");
 
 	exit_label = gtk_label_new_with_mnemonic ("E_xit node");
 	gtk_widget_set_halign (exit_label, GTK_ALIGN_START);
@@ -663,11 +714,8 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 	self->dns_check = gtk_check_button_new_with_mnemonic ("Accept _DNS (MagicDNS)");
 	self->routes_check = gtk_check_button_new_with_mnemonic ("Accept advertised _routes");
 
-	hint = gtk_label_new ("Auth key is optional: only needed while tailscaled is logged out. "
+	hint = dim_label_new ("Auth key is optional: only needed while tailscaled is logged out. "
 	                      "Without a key, use the browser login once.");
-	gtk_widget_add_css_class (hint, "dim-label");
-	gtk_label_set_wrap (GTK_LABEL (hint), TRUE);
-	gtk_label_set_xalign (GTK_LABEL (hint), 0.0);
 
 	gtk_grid_attach (GTK_GRID (grid), label, 0, 0, 1, 1);
 	gtk_grid_attach (GTK_GRID (grid), self->entry, 1, 0, 1, 1);
@@ -713,9 +761,9 @@ nm_vpn_editor_factory_tailscale (NMVpnEditorPlugin *editor_plugin,
 			self->stored_exit = g_strdup (item);
 	}
 	if (key)
-		gtk_editable_set_text (GTK_EDITABLE (self->entry), key);
-	gtk_check_button_set_active (GTK_CHECK_BUTTON (self->dns_check), dns);
-	gtk_check_button_set_active (GTK_CHECK_BUTTON (self->routes_check), routes);
+		entry_set_text (self->entry, key);
+	check_set_active (self->dns_check, dns);
+	check_set_active (self->routes_check, routes);
 
 	g_signal_connect_swapped (self->entry, "changed", G_CALLBACK (changed_cb), self);
 	g_signal_connect (self->login_button, "clicked", G_CALLBACK (login_clicked_cb), self);
