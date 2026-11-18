@@ -3,6 +3,13 @@ CC     ?= gcc
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 DIST   := dist
 
+# Install layout. The defaults fit Arch and Debian/Ubuntu, Fedora needs
+# NM_LIBEXECDIR=/usr/libexec.
+PREFIX           ?= /usr
+LIBDIR           ?= $(shell pkg-config --variable=libdir libnm)
+NM_LIBEXECDIR    ?= $(PREFIX)/lib/NetworkManager
+NM_PLUGINDIR     ?= $(LIBDIR)/NetworkManager
+
 PKG_SERVICE     := libnm libcurl json-glib-1.0
 PKG_PLUGIN      := libnm gmodule-2.0
 PKG_EDITOR      := libnm gtk+-3.0 gmodule-2.0 libcurl json-glib-1.0
@@ -73,8 +80,11 @@ $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so: plasma/stub.cpp plasma/plas
 	    $$(pkg-config --cflags --libs Qt6Core)
 	rm -f $(DIST)/stub.moc
 
-$(DIST)/nm-tailscale-service.name: nm-tailscale-service.name | $(DIST)
-	cp $< $@
+# files that carry install paths
+SUBST = sed -e 's|@NM_LIBEXECDIR@|$(NM_LIBEXECDIR)|g' -e 's|@NM_PLUGINDIR@|$(NM_PLUGINDIR)|g'
+
+$(DIST)/nm-tailscale-service.name: nm-tailscale-service.name.in | $(DIST)
+	$(SUBST) $< > $@
 
 $(DIST)/nm-tailscale-service.conf: nm-tailscale-service.conf | $(DIST)
 	cp $< $@
@@ -82,11 +92,12 @@ $(DIST)/nm-tailscale-service.conf: nm-tailscale-service.conf | $(DIST)
 $(DIST)/nm-tailscale-dispatcher: nm-tailscale-dispatcher | $(DIST)
 	cp $< $@
 
-$(DIST)/nm-tailscale-shutdown: nm-tailscale-shutdown | $(DIST)
-	cp $< $@
+$(DIST)/nm-tailscale-shutdown: nm-tailscale-shutdown.in | $(DIST)
+	$(SUBST) $< > $@
+	chmod 755 $@
 
-$(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf | $(DIST)
-	cp $< $@
+$(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf.in | $(DIST)
+	$(SUBST) $< > $@
 
 check: all
 	sh tests/smoke-test.sh

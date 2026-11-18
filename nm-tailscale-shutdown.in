@@ -6,5 +6,5 @@
 # connection is up.
 
 [ "$(systemctl is-system-running)" = stopping ] || exit 0
-pgrep -xf /usr/lib/NetworkManager/nm-tailscale-service > /dev/null || exit 0
+pgrep -xf @NM_LIBEXECDIR@/nm-tailscale-service > /dev/null || exit 0
 exec tailscale down
