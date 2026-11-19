@@ -1,4 +1,5 @@
-# Runs INSIDE the container: make -f build.mk [all|core|plasma|check|clean]
+# Runs INSIDE the container or a package build:
+# make -f build.mk [all|core|plasma|check|install|clean]
 CC     ?= gcc
 CXX    ?= g++
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
@@ -10,8 +11,13 @@ PREFIX           ?= /usr
 LIBDIR           ?= $(shell pkg-config --variable=libdir libnm)
 NM_LIBEXECDIR    ?= $(PREFIX)/lib/NetworkManager
 NM_PLUGINDIR     ?= $(LIBDIR)/NetworkManager
+NM_VPNDIR        ?= $(PREFIX)/lib/NetworkManager/VPN
+NM_DISPATCHERDIR ?= $(PREFIX)/lib/NetworkManager/dispatcher.d
+DBUS_SYSTEMDIR   ?= $(PREFIX)/share/dbus-1/system.d
+SYSTEMD_UNITDIR  ?= $(PREFIX)/lib/systemd/system
 KF6_INCDIR       ?= $(PREFIX)/include/KF6
 MOC              ?= $(shell pkg-config --variable=libexecdir Qt6Core)/moc
+QT_PLUGINDIR     ?= $(shell $(shell pkg-config --variable=bindir Qt6Core)/qtpaths6 --query QT_INSTALL_PLUGINS)
 
 PKG_SERVICE     := libnm libcurl json-glib-1.0
 PKG_PLUGIN      := libnm gmodule-2.0
@@ -109,7 +115,23 @@ $(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf.in | $(DIST)
 check: core
 	sh tests/smoke-test.sh
 
+install: install-core install-plasma
+
+install-core: core
+	install -Dm755 $(DIST)/nm-tailscale-service $(DESTDIR)$(NM_LIBEXECDIR)/nm-tailscale-service
+	install -Dm755 $(DIST)/nm-tailscale-shutdown $(DESTDIR)$(NM_LIBEXECDIR)/nm-tailscale-shutdown
+	install -Dm755 $(DIST)/libnm-vpn-plugin-tailscale.so $(DESTDIR)$(NM_PLUGINDIR)/libnm-vpn-plugin-tailscale.so
+	install -Dm755 $(DIST)/libnm-vpn-plugin-tailscale-editor.so $(DESTDIR)$(NM_PLUGINDIR)/libnm-vpn-plugin-tailscale-editor.so
+	install -Dm755 $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so $(DESTDIR)$(NM_PLUGINDIR)/libnm-gtk4-vpn-plugin-tailscale-editor.so
+	install -Dm644 $(DIST)/nm-tailscale-service.name $(DESTDIR)$(NM_VPNDIR)/nm-tailscale-service.name
+	install -Dm644 $(DIST)/nm-tailscale-service.conf $(DESTDIR)$(DBUS_SYSTEMDIR)/nm-tailscale-service.conf
+	install -Dm755 $(DIST)/nm-tailscale-dispatcher $(DESTDIR)$(NM_DISPATCHERDIR)/90-nm-tailscale
+	install -Dm644 $(DIST)/tailscaled-nm-tailscale.conf $(DESTDIR)$(SYSTEMD_UNITDIR)/tailscaled.service.d/nm-tailscale.conf
+
+install-plasma: $(DIST)/plasmanetworkmanagement_tailscaleui.so
+	install -Dm755 $< $(DESTDIR)$(QT_PLUGINDIR)/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
+
 clean:
 	rm -rf $(DIST)
 
-.PHONY: all core plasma check clean
+.PHONY: all core plasma check install install-core install-plasma clean
