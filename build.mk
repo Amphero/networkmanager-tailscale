@@ -1,4 +1,4 @@
-# Runs INSIDE the container: make -f build.mk [all|check|clean]
+# Runs INSIDE the container: make -f build.mk [all|core|plasma|check|clean]
 CC     ?= gcc
 CXX    ?= g++
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
@@ -20,17 +20,21 @@ PKG_EDITOR_GTK4 := libnm gtk4 gmodule-2.0 libcurl json-glib-1.0
 
 LOCALAPI := shared/nm-tailscale-localapi.c
 
-all: $(DIST)/nm-tailscale-service \
-     $(DIST)/libnm-vpn-plugin-tailscale.so \
-     $(DIST)/libnm-vpn-plugin-tailscale-editor.so \
-     $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so \
-     $(DIST)/plasmanetworkmanagement_tailscaleui.so \
-     $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so \
-     $(DIST)/nm-tailscale-service.name \
-     $(DIST)/nm-tailscale-service.conf \
-     $(DIST)/nm-tailscale-dispatcher \
-     $(DIST)/nm-tailscale-shutdown \
-     $(DIST)/tailscaled-nm-tailscale.conf
+CORE := $(DIST)/nm-tailscale-service \
+        $(DIST)/libnm-vpn-plugin-tailscale.so \
+        $(DIST)/libnm-vpn-plugin-tailscale-editor.so \
+        $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so \
+        $(DIST)/nm-tailscale-service.name \
+        $(DIST)/nm-tailscale-service.conf \
+        $(DIST)/nm-tailscale-dispatcher \
+        $(DIST)/nm-tailscale-shutdown \
+        $(DIST)/tailscaled-nm-tailscale.conf
+PLASMA := $(DIST)/plasmanetworkmanagement_tailscaleui.so \
+          $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so
+
+all: core plasma
+core: $(CORE)
+plasma: $(PLASMA)
 
 $(DIST):
 	mkdir -p $@
@@ -102,10 +106,10 @@ $(DIST)/nm-tailscale-shutdown: nm-tailscale-shutdown.in | $(DIST)
 $(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf.in | $(DIST)
 	$(SUBST) $< > $@
 
-check: all
+check: core
 	sh tests/smoke-test.sh
 
 clean:
 	rm -rf $(DIST)
 
-.PHONY: all check clean
+.PHONY: all core plasma check clean
