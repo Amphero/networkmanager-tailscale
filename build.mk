@@ -1,5 +1,6 @@
 # Runs INSIDE the container: make -f build.mk [all|check|clean]
 CC     ?= gcc
+CXX    ?= g++
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
 DIST   := dist
 
@@ -9,6 +10,8 @@ PREFIX           ?= /usr
 LIBDIR           ?= $(shell pkg-config --variable=libdir libnm)
 NM_LIBEXECDIR    ?= $(PREFIX)/lib/NetworkManager
 NM_PLUGINDIR     ?= $(LIBDIR)/NetworkManager
+KF6_INCDIR       ?= $(PREFIX)/include/KF6
+MOC              ?= $(shell pkg-config --variable=libexecdir Qt6Core)/moc
 
 PKG_SERVICE     := libnm libcurl json-glib-1.0
 PKG_PLUGIN      := libnm gmodule-2.0
@@ -57,26 +60,26 @@ $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-edito
 # installed plasma-nm version (reference/plasma-nm, the tag has to match the
 # host version) and linked against the installed libplasmanm_editor.so.
 PLASMA_INC  = -Ireference/plasma-nm/libs/editor -Ireference/plasma-nm/libs/editor/widgets -Iplasma \
-              -I/usr/include/KF6/KCoreAddons -I/usr/include/KF6/KWidgetsAddons -I/usr/include/KF6/NetworkManagerQt
+              -I$(KF6_INCDIR)/KCoreAddons -I$(KF6_INCDIR)/KWidgetsAddons -I$(KF6_INCDIR)/NetworkManagerQt
 PLASMA_PKGS = Qt6Widgets Qt6DBus Qt6Concurrent libnm libcurl
 
 $(DIST)/plasmanetworkmanagement_tailscaleui.so: plasma/tailscaleui.cpp $(LOCALAPI) plasma/plasmanetworkmanagement_tailscaleui.json plasma/plasmanm_editor_export.h shared/nm-tailscale.h shared/nm-tailscale-localapi.h | $(DIST)
-	/usr/lib/qt6/moc $$(pkg-config --cflags-only-I $(PLASMA_PKGS)) $(PLASMA_INC) -Ishared \
+	$(MOC) $$(pkg-config --cflags-only-I $(PLASMA_PKGS)) $(PLASMA_INC) -Ishared \
 	    plasma/tailscaleui.cpp -o $(DIST)/tailscaleui.moc
 	$(CC) $(CFLAGS) -fPIC -Ishared -c $(LOCALAPI) -o $(DIST)/localapi.o \
 	    $$(pkg-config --cflags libnm libcurl)
-	g++ -O2 -Wall -std=c++17 -fPIC -shared -Ishared $(PLASMA_INC) -I$(DIST) -o $@ \
+	$(CXX) -O2 -Wall -std=c++17 -fPIC -shared -Ishared $(PLASMA_INC) -I$(DIST) -o $@ \
 	    plasma/tailscaleui.cpp $(DIST)/localapi.o \
 	    $$(pkg-config --cflags --libs $(PLASMA_PKGS)) \
 	    -lKF6CoreAddons -lKF6WidgetsAddons -lKF6NetworkManagerQt \
-	    /usr/lib/libplasmanm_editor.so /usr/lib/libplasmanm_internal.so
+	    $(LIBDIR)/libplasmanm_editor.so $(LIBDIR)/libplasmanm_internal.so
 	rm -f $(DIST)/tailscaleui.moc $(DIST)/localapi.o
 
 # Metadata stub as a fallback in case the native plugin stops loading
 # after a Plasma update (same target path and name).
 $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so: plasma/stub.cpp plasma/plasmanetworkmanagement_tailscaleui.json | $(DIST)
-	/usr/lib/qt6/moc plasma/stub.cpp -o $(DIST)/stub.moc
-	g++ $(CFLAGS) -std=c++17 -fPIC -shared -Iplasma -I$(DIST) -o $@ plasma/stub.cpp \
+	$(MOC) plasma/stub.cpp -o $(DIST)/stub.moc
+	$(CXX) $(CFLAGS) -std=c++17 -fPIC -shared -Iplasma -I$(DIST) -o $@ plasma/stub.cpp \
 	    $$(pkg-config --cflags --libs Qt6Core)
 	rm -f $(DIST)/stub.moc
 
