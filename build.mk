@@ -67,8 +67,9 @@ $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-edito
 	    $$(pkg-config --cflags --libs $(PKG_EDITOR_GTK4))
 
 # Native plasma-nm plugin: built against the private headers of the exact
-# installed plasma-nm version (reference/plasma-nm, the tag has to match the
-# host version) and linked against the installed libplasmanm_editor.so.
+# installed plasma-nm version (reference/plasma-nm, see
+# tools/fetch-plasma-nm.sh) and linked against the installed
+# libplasmanm_editor.so.
 PLASMA_INC  = -Ireference/plasma-nm/libs/editor -Ireference/plasma-nm/libs/editor/widgets -Iplasma \
               -I$(KF6_INCDIR)/KCoreAddons -I$(KF6_INCDIR)/KWidgetsAddons -I$(KF6_INCDIR)/NetworkManagerQt
 PLASMA_PKGS = Qt6Widgets Qt6DBus Qt6Concurrent libnm libcurl

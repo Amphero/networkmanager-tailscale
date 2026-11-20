@@ -46,8 +46,7 @@ version, so it has to be rebuilt whenever plasma-nm updates. Get the
 matching sources with:
 
 ```sh
-git clone --depth 1 --branch v$(pacman -Q plasma-nm | cut -d' ' -f2 | cut -d- -f1) \
-    https://invent.kde.org/plasma/plasma-nm.git reference/plasma-nm
+tools/fetch-plasma-nm.sh   # works with pacman, dpkg and rpm
 ```
 
 ## Arch packages
