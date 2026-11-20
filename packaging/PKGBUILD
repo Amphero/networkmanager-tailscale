@@ -34,15 +34,7 @@ package_networkmanager-tailscale() {
 	depends=(networkmanager libnm curl json-glib gtk3 gtk4 tailscale)
 
 	cd "$pkgbase-$pkgver"
-	install -Dm755 dist/nm-tailscale-service "$pkgdir/usr/lib/NetworkManager/nm-tailscale-service"
-	install -Dm755 dist/libnm-vpn-plugin-tailscale.so "$pkgdir/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so"
-	install -Dm755 dist/libnm-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-vpn-plugin-tailscale-editor.so"
-	install -Dm755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so "$pkgdir/usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so"
-	install -Dm644 dist/nm-tailscale-service.name "$pkgdir/usr/lib/NetworkManager/VPN/nm-tailscale-service.name"
-	install -Dm644 dist/nm-tailscale-service.conf "$pkgdir/usr/share/dbus-1/system.d/nm-tailscale-service.conf"
-	install -Dm755 dist/nm-tailscale-dispatcher "$pkgdir/usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale"
-	install -Dm755 dist/nm-tailscale-shutdown "$pkgdir/usr/lib/NetworkManager/nm-tailscale-shutdown"
-	install -Dm644 dist/tailscaled-nm-tailscale.conf "$pkgdir/usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf"
+	make -f build.mk DESTDIR="$pkgdir" install-core
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
 
@@ -51,8 +43,7 @@ package_networkmanager-tailscale-plasma() {
 	depends=(networkmanager-tailscale plasma-nm)
 
 	cd "$pkgbase-$pkgver"
-	install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so \
-		"$pkgdir/usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so"
+	make -f build.mk DESTDIR="$pkgdir" install-plasma
 	install -Dm644 "$srcdir/networkmanager-tailscale-plasma.hook" \
 		"$pkgdir/usr/share/libalpm/hooks/networkmanager-tailscale-plasma.hook"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
