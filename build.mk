@@ -47,24 +47,24 @@ $(DIST):
 
 $(DIST)/nm-tailscale-service: src/nm-tailscale-service.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -o $@ src/nm-tailscale-service.c $(LOCALAPI) \
-	    $$(pkg-config --cflags --libs $(PKG_SERVICE))
+	    $$(pkg-config --cflags --libs $(PKG_SERVICE)) $(LDFLAGS)
 
 $(DIST)/libnm-vpn-plugin-tailscale.so: properties/nm-tailscale-editor-plugin.c shared/nm-tailscale.h properties/libnm-vpn-plugin-tailscale.ver | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ $< \
 	    -Wl,--version-script=properties/libnm-vpn-plugin-tailscale.ver \
-	    $$(pkg-config --cflags --libs $(PKG_PLUGIN)) -ldl
+	    $$(pkg-config --cflags --libs $(PKG_PLUGIN)) -ldl $(LDFLAGS)
 
 # Editor module for GTK3 hosts (nm-connection-editor)
 $(DIST)/libnm-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ properties/nm-tailscale-editor.c $(LOCALAPI) \
 	    -Wl,--version-script=properties/nm-tailscale-editor.ver \
-	    $$(pkg-config --cflags --libs $(PKG_EDITOR))
+	    $$(pkg-config --cflags --libs $(PKG_EDITOR)) $(LDFLAGS)
 
 # The same editor source as above, built for GTK4 hosts (GNOME Settings)
 $(DIST)/libnm-gtk4-vpn-plugin-tailscale-editor.so: properties/nm-tailscale-editor.c $(LOCALAPI) shared/nm-tailscale.h shared/nm-tailscale-localapi.h properties/nm-tailscale-editor.ver | $(DIST)
 	$(CC) $(CFLAGS) -Ishared -shared -fPIC -o $@ properties/nm-tailscale-editor.c $(LOCALAPI) \
 	    -Wl,--version-script=properties/nm-tailscale-editor.ver \
-	    $$(pkg-config --cflags --libs $(PKG_EDITOR_GTK4))
+	    $$(pkg-config --cflags --libs $(PKG_EDITOR_GTK4)) $(LDFLAGS)
 
 # Native plasma-nm plugin: built against the private headers of the exact
 # installed plasma-nm version (reference/plasma-nm, see
@@ -83,7 +83,7 @@ $(DIST)/plasmanetworkmanagement_tailscaleui.so: plasma/tailscaleui.cpp $(LOCALAP
 	    plasma/tailscaleui.cpp $(DIST)/localapi.o \
 	    $$(pkg-config --cflags --libs $(PLASMA_PKGS)) \
 	    -lKF6CoreAddons -lKF6WidgetsAddons -lKF6NetworkManagerQt \
-	    $(LIBDIR)/libplasmanm_editor.so $(LIBDIR)/libplasmanm_internal.so
+	    $(LIBDIR)/libplasmanm_editor.so $(LIBDIR)/libplasmanm_internal.so $(LDFLAGS)
 	rm -f $(DIST)/tailscaleui.moc $(DIST)/localapi.o
 
 # Metadata stub as a fallback in case the native plugin stops loading
@@ -91,7 +91,7 @@ $(DIST)/plasmanetworkmanagement_tailscaleui.so: plasma/tailscaleui.cpp $(LOCALAP
 $(DIST)/plasmanetworkmanagement_tailscaleui-stub.so: plasma/stub.cpp plasma/plasmanetworkmanagement_tailscaleui.json | $(DIST)
 	$(MOC) plasma/stub.cpp -o $(DIST)/stub.moc
 	$(CXX) $(CFLAGS) -std=c++17 -fPIC -shared -Iplasma -I$(DIST) -o $@ plasma/stub.cpp \
-	    $$(pkg-config --cflags --libs Qt6Core)
+	    $$(pkg-config --cflags --libs Qt6Core) $(LDFLAGS)
 	rm -f $(DIST)/stub.moc
 
 # files that carry install paths
