@@ -31,7 +31,9 @@ build() {
 
 package_networkmanager-tailscale() {
 	pkgdesc+=" (service daemon and GTK editors)"
-	depends=(networkmanager libnm curl json-glib gtk3 gtk4 tailscale)
+	depends=(networkmanager libnm curl json-glib tailscale)
+	optdepends=('gtk3: editor for nm-connection-editor'
+	            'gtk4: editor for GNOME Settings')
 
 	cd "$pkgbase-$pkgver"
 	make -f build.mk DESTDIR="$pkgdir" install-core
