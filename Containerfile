@@ -6,7 +6,7 @@ RUN pacman -Syu --noconfirm --needed \
         gcc make pkgconf glib2 glib2-devel \
         libnm gtk3 gtk4 json-glib curl qt6-base \
         plasma-nm kcoreaddons kwidgetsaddons networkmanager-qt \
-        dbus python \
+        dbus python python-gobject xorg-server-xvfb \
         base-devel networkmanager tailscale \
     && pacman -Scc --noconfirm \
     && useradd -m builder

@@ -10,7 +10,7 @@ container:
 	$(PODMAN) build -t $(IMAGE) .
 
 check:
-	$(RUN) make -f build.mk check
+	$(RUN) make -f build.mk check check-editor
 
 shell:
 	$(PODMAN) run --rm -it -v "$(CURDIR)":/src -w /src $(IMAGE) bash

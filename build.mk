@@ -1,5 +1,5 @@
 # Runs INSIDE the container or a package build:
-# make -f build.mk [all|core|plasma|check|install|clean]
+# make -f build.mk [all|core|plasma|check|check-editor|install|clean]
 CC     ?= gcc
 CXX    ?= g++
 CFLAGS ?= -O2 -Wall -Wextra -Wno-unused-parameter
@@ -116,6 +116,12 @@ $(DIST)/tailscaled-nm-tailscale.conf: tailscaled-nm-tailscale.conf.in | $(DIST)
 check: core
 	sh tests/smoke-test.sh
 
+# needs xvfb-run and PyGObject with GTK3 and GTK4
+check-editor: core
+	for v in 3.0 4.0; do \
+	    GDK_BACKEND=x11 xvfb-run -a python3 tests/editor-test.py $$v $(DIST)/libnm-vpn-plugin-tailscale.so || exit 1; \
+	done
+
 install: install-core install-plasma
 
 install-core: core
@@ -135,4 +141,4 @@ install-plasma: $(DIST)/plasmanetworkmanagement_tailscaleui.so
 clean:
 	rm -rf $(DIST)
 
-.PHONY: all core plasma check install install-core install-plasma clean
+.PHONY: all core plasma check check-editor install install-core install-plasma clean
