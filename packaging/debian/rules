@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+
+# installed plasma-nm version without the Debian revision, keeps the epoch
+PLASMANM := $(shell dpkg-query -W -f='$${Version}' plasma-nm | sed 's/-[^-]*$$//')
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	test -d reference/plasma-nm || sh tools/fetch-plasma-nm.sh
+
+override_dh_auto_build:
+	$(MAKE) -f build.mk all
+
+override_dh_auto_test:
+	$(MAKE) -f build.mk check
+
+override_dh_auto_install:
+	$(MAKE) -f build.mk DESTDIR=$(CURDIR)/debian/tmp install
+
+override_dh_gencontrol:
+	dh_gencontrol -- -Vplasmanm:Version=$(PLASMANM)

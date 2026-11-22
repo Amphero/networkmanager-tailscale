@@ -1,0 +1,2 @@
+usr/lib/*/NetworkManager/libnm-vpn-plugin-tailscale-editor.so
+usr/lib/*/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so

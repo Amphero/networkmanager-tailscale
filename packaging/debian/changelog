@@ -1,0 +1,5 @@
+network-manager-tailscale (0.1.6-1) UNRELEASED; urgency=medium
+
+  * Debian and Ubuntu packages.
+
+ -- Amphero <301399868+Amphero@users.noreply.github.com>  Sun, 22 Nov 2026 15:48:00 +0100

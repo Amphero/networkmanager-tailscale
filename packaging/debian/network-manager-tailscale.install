@@ -1,0 +1,7 @@
+usr/lib/NetworkManager/nm-tailscale-service
+usr/lib/NetworkManager/nm-tailscale-shutdown
+usr/lib/*/NetworkManager/libnm-vpn-plugin-tailscale.so
+usr/lib/NetworkManager/VPN/nm-tailscale-service.name
+usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale
+usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf
+usr/share/dbus-1/system.d/nm-tailscale-service.conf
