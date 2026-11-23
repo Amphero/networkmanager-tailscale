@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  arch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build and test
+        run: |
+          docker build -t build .
+          docker run --rm -v "$PWD":/src -w /src build sh -c \
+              'sh tools/fetch-plasma-nm.sh && make -f build.mk all check check-editor'
+
+  deb:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:trixie
+            name: debian-13
+          - image: ubuntu:26.04
+            name: ubuntu-26.04
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh tools/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*.deb
+
+  rpm:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: sh tools/build-rpm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fedora
+          path: dist/*.rpm
