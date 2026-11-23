@@ -26,7 +26,19 @@ pkg:
 	    cd /tmp/pkg && runuser -u builder -- makepkg -f --noconfirm --skipinteg && \
 	    mkdir -p /src/dist && cp *.pkg.tar.zst /src/dist/'
 
+DEB_IMAGES ?= debian:trixie ubuntu:26.04
+RPM_IMAGE  ?= fedora:latest
+
+# Build the Debian/Ubuntu and Fedora packages from the working tree -> dist/
+deb:
+	for img in $(DEB_IMAGES); do \
+	    $(PODMAN) run --rm -v "$(CURDIR)":/src -w /src docker.io/library/$$img sh tools/build-deb.sh || exit 1; \
+	done
+
+rpm:
+	$(PODMAN) run --rm -v "$(CURDIR)":/src -w /src docker.io/library/$(RPM_IMAGE) sh tools/build-rpm.sh
+
 clean:
 	rm -rf dist packaging/*.tar.gz
 
-.PHONY: build container check shell clean pkg
+.PHONY: build container check shell clean pkg deb rpm
