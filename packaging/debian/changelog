@@ -1,5 +1,5 @@
-network-manager-tailscale (0.1.6-1) UNRELEASED; urgency=medium
+network-manager-tailscale (0.1.6-1) unstable; urgency=medium
 
-  * Debian and Ubuntu packages.
+  * Debian and Ubuntu packages, GTK3 editor.
 
- -- Amphero <301399868+Amphero@users.noreply.github.com>  Sun, 22 Nov 2026 15:48:00 +0100
+ -- Amphero <301399868+Amphero@users.noreply.github.com>  Tue, 24 Nov 2026 16:52:00 +0100

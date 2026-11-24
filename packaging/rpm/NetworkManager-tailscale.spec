@@ -94,4 +94,4 @@ make -f build.mk check NM_LIBEXECDIR=%{_libexecdir}
 
 %changelog
 * Mon Nov 23 2026 Amphero <301399868+Amphero@users.noreply.github.com> - 0.1.6-1
-- RPM packages
+- RPM packages, GTK3 editor
