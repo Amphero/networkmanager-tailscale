@@ -28,7 +28,8 @@ Code layout: `src/` has the VPN service daemon (C, libnm), `properties/`
 the connection editor (libnm core plus a UI built for GTK3 and GTK4),
 `plasma/` the plasma-nm plugin (Qt/C++) and a metadata stub as fallback,
 `shared/` common key definitions and the LocalAPI HTTP client, `tests/` a
-D-Bus smoke test against a mocked tailscaled.
+D-Bus smoke test against a mocked tailscaled and an editor test,
+`packaging/` the Arch, Debian and RPM packaging, `tools/` helper scripts.
 
 ## Building
 
@@ -38,7 +39,7 @@ land in `./dist/`:
 ```sh
 make container   # build the image once
 make build
-make check       # smoke test: private D-Bus + LocalAPI mock
+make check       # smoke test (private D-Bus + LocalAPI mock) and editor test
 ```
 
 The plasma-nm plugin needs private plasma-nm headers matching the installed
@@ -49,26 +50,40 @@ matching sources with:
 tools/fetch-plasma-nm.sh   # works with pacman, dpkg and rpm
 ```
 
-## Arch packages
+## Packages
 
 Prebuilt x86_64 packages are attached to the
-[releases](https://github.com/Amphero/networkmanager-tailscale/releases).
-Install with `sudo pacman -U <package>` and restart NetworkManager,
-dependencies come from the official repos.
+[releases](https://github.com/Amphero/networkmanager-tailscale/releases):
 
-To build the packages yourself, `make pkg` builds both from the committed
-state (HEAD) into `./dist/`:
+| | Daemon | GTK editors | Plasma editor |
+|---|---|---|---|
+| Arch | `networkmanager-tailscale` | included, needs `gtk3`/`gtk4` | `networkmanager-tailscale-plasma` |
+| Debian 13, Ubuntu 26.04 | `network-manager-tailscale` | `network-manager-tailscale-gnome` | `network-manager-tailscale-plasma` |
+| Fedora | `NetworkManager-tailscale` | `NetworkManager-tailscale-gnome` | `NetworkManager-tailscale-plasma` |
+
+On Debian, Ubuntu and Fedora `tailscale` comes from the
+[Tailscale repos](https://tailscale.com/download/linux). You need the
+daemon and the editor for your desktop, the lines below install all
+packages of a release:
 
 ```sh
-make pkg
-sudo pacman -U dist/networkmanager-tailscale-*-x86_64.pkg.tar.zst          # daemon + GNOME
-sudo pacman -U dist/networkmanager-tailscale-plasma-*-x86_64.pkg.tar.zst   # KDE only
-sudo systemctl reload dbus && sudo systemctl restart NetworkManager
+sudo pacman -U ./networkmanager-tailscale-*.pkg.tar.zst      # Arch
+sudo apt install ./network-manager-tailscale*_amd64.deb      # Debian, Ubuntu
+sudo dnf install ./NetworkManager-tailscale*.rpm             # Fedora
+sudo systemctl daemon-reload && sudo systemctl restart NetworkManager
 ```
 
-Remove with `sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale`.
-The plasma package installs a pacman hook that prints a rebuild reminder
-when plasma-nm gets updated.
+The plasma package only works with the plasma-nm version it was built
+against. On Arch a pacman hook prints a reminder when plasma-nm gets
+updated, the deb and rpm packages depend on that exact version.
+
+To build the packages yourself:
+
+```sh
+make pkg   # Arch, from the committed state (HEAD)
+make deb   # Debian 13 and Ubuntu 26.04, from the working tree
+make rpm   # Fedora, from the working tree
+```
 
 The PKGBUILD in `packaging/` also works standalone. It fetches the release
 tarball for tag `v<pkgver>` and verifies pinned checksums. `make pkg`
@@ -77,21 +92,13 @@ builds a local HEAD snapshot instead and skips the checksum check.
 ## Manual installation
 
 You need `tailscale` installed and `tailscaled` running
-(`systemctl enable --now tailscaled`). Then:
+(`systemctl enable --now tailscaled`). The container is Arch based, on
+other distributions build natively with `make -f build.mk all`, on
+Fedora with `NM_LIBEXECDIR=/usr/libexec` for build and install. Then:
 
 ```sh
-sudo install -m755 dist/nm-tailscale-service                       /usr/lib/NetworkManager/nm-tailscale-service
-sudo install -m755 dist/libnm-vpn-plugin-tailscale.so              /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale.so
-sudo install -m755 dist/libnm-vpn-plugin-tailscale-editor.so       /usr/lib/NetworkManager/libnm-vpn-plugin-tailscale-editor.so
-sudo install -m755 dist/libnm-gtk4-vpn-plugin-tailscale-editor.so  /usr/lib/NetworkManager/libnm-gtk4-vpn-plugin-tailscale-editor.so
-sudo install -Dm644 dist/nm-tailscale-service.name                 /usr/lib/NetworkManager/VPN/nm-tailscale-service.name
-sudo install -m644 dist/nm-tailscale-service.conf                  /usr/share/dbus-1/system.d/nm-tailscale-service.conf
-sudo install -m755 dist/nm-tailscale-dispatcher                    /usr/lib/NetworkManager/dispatcher.d/90-nm-tailscale
-sudo install -m755 dist/nm-tailscale-shutdown                      /usr/lib/NetworkManager/nm-tailscale-shutdown
-sudo install -Dm644 dist/tailscaled-nm-tailscale.conf              /usr/lib/systemd/system/tailscaled.service.d/nm-tailscale.conf
-# KDE Plasma only:
-sudo install -Dm755 dist/plasmanetworkmanagement_tailscaleui.so    /usr/lib/qt6/plugins/plasma/network/vpn/plasmanetworkmanagement_tailscaleui.so
-
+sudo make -f build.mk install-core
+sudo make -f build.mk install-plasma   # KDE Plasma only
 sudo systemctl daemon-reload
 sudo systemctl reload dbus
 sudo systemctl restart NetworkManager
@@ -145,8 +152,15 @@ LocalAPI. Fix: `sudo tailscale set --operator=$USER`.
 
 ## Uninstall
 
-Package installs: `sudo pacman -R networkmanager-tailscale-plasma
-networkmanager-tailscale`. Manual installs:
+Packages:
+
+```sh
+sudo pacman -R networkmanager-tailscale-plasma networkmanager-tailscale   # Arch
+sudo apt remove 'network-manager-tailscale*'                              # Debian, Ubuntu
+sudo dnf remove 'NetworkManager-tailscale*'                               # Fedora
+```
+
+Manual installs on Arch:
 
 ```sh
 nmcli connection delete Tailscale
