@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: Build and test
         run: |
-          docker build -t build .
+          docker build -t build -f Containerfile .
           docker run --rm -v "$PWD":/src -w /src build sh -c \
               'sh tools/fetch-plasma-nm.sh && make -f build.mk all check check-editor'
 
